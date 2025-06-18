@@ -14,7 +14,7 @@ mongoose.connect('mongodb://localhost:27017/lis', {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-.then(() => console.log('Conectado ao MongoDB'))
+.then(() => {})
 .catch(err => console.error('Erro ao conectar ao MongoDB:', err));
 
 // Usar as rotas do servidor
@@ -23,5 +23,5 @@ app.use(server);
 // Iniciar o servidor
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  // Server started successfully
 }); 

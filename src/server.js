@@ -16,9 +16,6 @@ const bcrypt = require('bcryptjs');
 const DraftSale = require('./models/DraftSale');
 const router = express.Router();
 
-// Log environment variables (remove in production)
-console.log('MongoDB URI:', process.env.MONGODB_URI ? 'URI is set' : 'URI is not set');
-
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -56,7 +53,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => {
-  console.log('Connected to MongoDB Atlas');
+  // Connected to MongoDB Atlas
 }).catch((error) => {
   console.error('MongoDB connection error:', error);
 });
@@ -77,10 +74,10 @@ io.use((socket, next) => {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.user);
+  // User connected
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
+    // User disconnected
   });
 });
 
@@ -172,7 +169,6 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
 
     // Upload image to S3
     const imageUrl = await uploadToS3(req.file);
-    console.log('Image uploaded to S3:', imageUrl);
 
     const product = new Product({
       name,
@@ -183,7 +179,6 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
     });
     
     await product.save();
-    console.log('Product saved with image URL:', imageUrl);
     
     io.emit('productCreated', product);
     res.status(201).json(product);
@@ -211,7 +206,6 @@ app.put('/api/products/:id', async (req, res) => {
     product.quantity = parseInt(quantity) || 0;
 
     await product.save();
-    console.log('Product updated:', product);
 
     res.json(product);
   } catch (error) {
@@ -222,12 +216,10 @@ app.put('/api/products/:id', async (req, res) => {
 
 app.get('/api/products', authenticate, async (req, res) => {
   try {
-    console.log('Fetching products for user:', req.user);
     
     if (req.user.isAdmin) {
       // Admins can see all products
     const products = await Product.find();
-      console.log('Admin found all products:', products);
       return res.json(products);
     }
 
@@ -252,7 +244,6 @@ app.get('/api/products', authenticate, async (req, res) => {
       _id: { $in: Array.from(productIds) }
     });
 
-    console.log('Regular user found products:', products);
     res.json(products);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -270,7 +261,6 @@ app.get('/api/debug/products', async (req, res) => {
       image: product.image,
       createdAt: product.createdAt
     }));
-    console.log('Debug - Product Data:', JSON.stringify(productData, null, 2));
     res.json(productData);
   } catch (error) {
     console.error('Debug - Error fetching products:', error);
@@ -280,27 +270,18 @@ app.get('/api/debug/products', async (req, res) => {
 
 app.delete('/api/products/:id', authenticate, async (req, res) => {
   try {
-    console.log('Delete request received:', {
-      params: req.params,
-      headers: req.headers,
-      user: req.user
-    });
-
     // Check if user is admin
     if (!req.user.isAdmin) {
-      console.log('User is not admin:', req.user);
       return res.status(403).json({ error: 'Only admins can delete products' });
     }
 
     const product = await Product.findById(req.params.id);
     
     if (!product) {
-      console.log('Product not found:', req.params.id);
       return res.status(404).json({ error: 'Product not found' });
     }
 
     await product.deleteOne();
-    console.log('Product deleted successfully:', req.params.id);
     
     res.status(200).json({ message: 'Product deleted successfully' });
   } catch (error) {
@@ -312,7 +293,6 @@ app.delete('/api/products/:id', authenticate, async (req, res) => {
 // Custom Lists routes
 app.post('/api/custom-lists', authenticate, async (req, res) => {
   try {
-    console.log('Creating custom list with data:', req.body);
     const { name, description, products, sharedWith, isPublic } = req.body;
     
     const customList = new CustomList({
@@ -325,7 +305,6 @@ app.post('/api/custom-lists', authenticate, async (req, res) => {
     });
 
     await customList.save();
-    console.log('Custom list created successfully:', customList);
     res.status(201).json(customList);
   } catch (error) {
     console.error('Error creating custom list:', error);
@@ -335,12 +314,10 @@ app.post('/api/custom-lists', authenticate, async (req, res) => {
 
 app.get('/api/custom-lists', authenticate, async (req, res) => {
   try {
-    console.log('Fetching custom lists for user:', req.user._id);
     
     if (req.user.isAdmin) {
       // Admins can see all lists
       const lists = await CustomList.find().populate('products');
-      console.log('Admin found all lists:', lists);
       return res.json(lists);
     }
 
@@ -353,7 +330,6 @@ app.get('/api/custom-lists', authenticate, async (req, res) => {
       ]
     }).populate('products');
 
-    console.log('Regular user found their lists:', lists);
     res.json(lists);
   } catch (error) {
     console.error('Error fetching custom lists:', error);
@@ -580,7 +556,6 @@ const createAdminUser = async () => {
         isAdmin: true
       });
       await admin.save();
-      console.log('Admin user created successfully');
     }
   } catch (error) {
     console.error('Error creating admin user:', error);
@@ -633,13 +608,6 @@ app.post('/api/sales', authenticate, async (req, res) => {
     // Calcular comissão (30% do total)
     const commission = Number((total * 0.3).toFixed(2));
 
-    console.log('Criando venda:', {
-      userId: req.user._id,
-      products,
-      total,
-      commission
-    });
-
     const sale = new Sale({
       userId: req.user._id,
       products,
@@ -648,7 +616,6 @@ app.post('/api/sales', authenticate, async (req, res) => {
     });
 
     await sale.save();
-    console.log('Venda criada com sucesso:', sale);
 
     res.status(201).json(sale);
   } catch (error) {
@@ -664,8 +631,6 @@ app.get('/api/sales/summary', authenticate, async (req, res) => {
       return res.status(403).json({ message: 'Acesso negado. Apenas administradores podem ver o resumo de vendas.' });
     }
 
-    console.log('Buscando resumo de vendas...');
-    
     // Buscar todas as vendas com detalhes do usuário e produtos
     const sales = await Sale.aggregate([
       {
@@ -743,7 +708,6 @@ app.get('/api/sales/summary', authenticate, async (req, res) => {
       }
     ]);
 
-    console.log('Vendas encontradas:', JSON.stringify(sales, null, 2));
     res.json(sales);
   } catch (error) {
     console.error('Erro ao buscar resumo de vendas:', error);
@@ -777,8 +741,6 @@ router.get('/sales/summary', authenticateToken, async (req, res) => {
     if (!user || !user.isAdmin) {
       return res.status(403).json({ message: 'Acesso negado' });
     }
-
-    console.log('Buscando resumo de vendas...');
 
     // Buscar todas as vendas com detalhes do usuário e produtos
     const sales = await Sale.aggregate([
@@ -857,9 +819,6 @@ router.get('/sales/summary', authenticateToken, async (req, res) => {
       }
     ]);
 
-    console.log(`Total de vendas encontradas: ${sales.length}`);
-    console.log('Primeira venda:', sales[0]);
-
     res.json(sales);
   } catch (error) {
     console.error('Erro ao buscar resumo de vendas:', error);
@@ -895,7 +854,6 @@ router.post('/sales', authenticateToken, async (req, res) => {
     });
 
     await sale.save();
-    console.log('Venda registrada com sucesso:', sale);
 
     res.status(201).json(sale);
   } catch (error) {
@@ -963,6 +921,5 @@ module.exports = router;
 // Start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
   createAdminUser();
 });
