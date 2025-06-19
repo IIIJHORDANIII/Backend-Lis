@@ -20,14 +20,14 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
+    origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
     methods: ["GET", "POST"]
   }
 });
 
 // Middleware
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
+  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -35,7 +35,7 @@ app.use(cors({
 
 // Handle preflight requests
 app.options('*', cors({
-  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
+  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -43,15 +43,6 @@ app.options('*', cors({
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
-
-// Test endpoint
-app.get('/api/test', (req, res) => {
-  res.json({ 
-    message: 'Backend is working!', 
-    timestamp: new Date().toISOString(),
-    mongoConnected: mongoose.connection.readyState === 1
-  });
-});
 
 // Multer configuration for file uploads
 const storage = multer.memoryStorage();
@@ -62,11 +53,9 @@ mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => {
-  console.log('✅ Connected to MongoDB Atlas successfully');
-  console.log('MongoDB URI:', process.env.MONGODB_URI ? 'Set' : 'Not set');
+  // Connected to MongoDB Atlas
 }).catch((error) => {
-  console.error('❌ MongoDB connection error:', error);
-  console.error('MongoDB URI:', process.env.MONGODB_URI ? 'Set' : 'Not set');
+  console.error('MongoDB connection error:', error);
 });
 
 // Socket.IO authentication middleware
@@ -76,7 +65,7 @@ io.use((socket, next) => {
     return next(new Error('Authentication error'));
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, decoded) => {
+  jwt.verify(token, 'your-secret-key', (err, decoded) => {
     if (err) return next(new Error('Authentication error'));
     socket.user = decoded;
     next();
@@ -137,39 +126,24 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    console.log('Login attempt received:', { email: req.body.email });
-    
     const { email, password } = req.body;
-    
-    if (!email || !password) {
-      console.log('Missing email or password');
-      return res.status(400).json({ message: 'Email and password are required' });
-    }
-    
-    console.log('Searching for user with email:', email);
     const user = await User.findOne({ email });
-    
+
     if (!user) {
-      console.log('User not found for email:', email);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
-    
-    console.log('User found, comparing passwords');
+
     const isMatch = await bcrypt.compare(password, user.password);
-    
     if (!isMatch) {
-      console.log('Password mismatch for user:', email);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
-    
-    console.log('Password match, generating token');
+
     const token = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
     );
-    
-    console.log('Login successful for user:', email);
+
     res.json({
       token,
       user: {
@@ -179,9 +153,8 @@ app.post('/api/login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error details:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ message: 'Error during login', details: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Error during login' });
   }
 });
 
