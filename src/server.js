@@ -20,14 +20,14 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
+    origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
     methods: ["GET", "POST"]
   }
 });
 
 // Middleware
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
+  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -35,7 +35,7 @@ app.use(cors({
 
 // Handle preflight requests
 app.options('*', cors({
-  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
+  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
