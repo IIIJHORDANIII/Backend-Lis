@@ -1165,6 +1165,8 @@ app.get('/', (req, res) => {
                 <p><strong>Origens permitidas:</strong></p>
                 <p>• http://localhost:3000</p>
                 <p>• http://localhost:3005</p>
+                <p>• https://www.jhorello.com.br</p>
+                <p>• https://frontend-lis.vercel.app</p>
             </div>
         </div>
 
@@ -1309,7 +1311,7 @@ app.get('/', (req, res) => {
         </div>
 
         <div class="cors-info">
-            <strong>🌐 CORS Configurado:</strong> A API aceita requisições dos domínios localhost:3000 e localhost:3005 com os métodos GET, POST, PUT, DELETE e OPTIONS.
+            <strong>🌐 CORS Configurado:</strong> A API aceita requisições dos domínios localhost:3000,localhost:3005 ,https://www.jhorello.com.br e https://frontend-lis.vercel.app com os métodos GET, POST, PUT, DELETE e OPTIONS.
         </div>
 
         <div class="footer">
