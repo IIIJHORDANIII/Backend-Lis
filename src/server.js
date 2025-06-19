@@ -20,14 +20,14 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3005"],
+    origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
     methods: ["GET", "POST"]
   }
 });
 
 // Middleware
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3005"],
+  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -35,7 +35,7 @@ app.use(cors({
 
 // Handle preflight requests
 app.options('*', cors({
-  origin: ["http://localhost:3000", "http://localhost:3005"],
+  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app"],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -914,6 +914,385 @@ app.delete('/api/draft-sales', authenticate, async (req, res) => {
     console.error('Erro ao limpar venda em progresso:', error);
     res.status(500).json({ message: 'Erro ao limpar venda em progresso' });
   }
+});
+
+// Rota raiz para mostrar todas as requisições disponíveis
+app.get('/', (req, res) => {
+  const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Lis - Documentação</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .info-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .info-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .info-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+        }
+
+        .info-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+        }
+
+        .endpoints-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .endpoint-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .endpoint-section:hover {
+            transform: translateY(-3px);
+        }
+
+        .endpoint-section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .endpoint-section h2::before {
+            content: '';
+            width: 4px;
+            height: 25px;
+            background: #667eea;
+            border-radius: 2px;
+        }
+
+        .endpoint-item {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            transition: all 0.3s ease;
+        }
+
+        .endpoint-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+
+        .method {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-right: 10px;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .method.get { background: #28a745; color: white; }
+        .method.post { background: #007bff; color: white; }
+        .method.put { background: #ffc107; color: black; }
+        .method.delete { background: #dc3545; color: white; }
+
+        .endpoint-path {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .endpoint-description {
+            margin-top: 5px;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .auth-note {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+        }
+
+        .auth-note strong {
+            color: #d63031;
+        }
+
+        .cors-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #0c5460;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .endpoints-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .endpoint-item {
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 API Lis</h1>
+            <p>Documentação Completa das Requisições Disponíveis</p>
+        </div>
+
+        <div class="info-cards">
+            <div class="info-card">
+                <h3>📊 Informações Gerais</h3>
+                <p><strong>Versão:</strong> 1.0.0</p>
+                <p><strong>Base URL:</strong> ${req.protocol}://${req.get('host')}</p>
+                <p><strong>Status:</strong> <span style="color: #28a745;">🟢 Online</span></p>
+            </div>
+            
+            <div class="info-card">
+                <h3>🔐 Autenticação</h3>
+                <p>A maioria das rotas requer autenticação via token JWT</p>
+                <p><strong>Formato:</strong> Authorization: Bearer &lt;token&gt;</p>
+            </div>
+            
+            <div class="info-card">
+                <h3>🌐 CORS</h3>
+                <p><strong>Origens permitidas:</strong></p>
+                <p>• http://localhost:3000</p>
+                <p>• http://localhost:3005</p>
+            </div>
+        </div>
+
+        <div class="auth-note">
+            <strong>⚠️ Nota:</strong> A maioria das rotas requer autenticação. Use o endpoint <code>POST /api/login</code> para obter um token JWT.
+        </div>
+
+        <div class="endpoints-grid">
+            <div class="endpoint-section">
+                <h2>🔐 Autenticação</h2>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/register</span>
+                    <div class="endpoint-description">Registrar novo usuário</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/login</span>
+                    <div class="endpoint-description">Fazer login e obter token JWT</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/create-admin</span>
+                    <div class="endpoint-description">Criar usuário administrador</div>
+                </div>
+            </div>
+
+            <div class="endpoint-section">
+                <h2>👥 Usuários</h2>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/users</span>
+                    <div class="endpoint-description">Listar todos os usuários (apenas admin)</div>
+                </div>
+            </div>
+
+            <div class="endpoint-section">
+                <h2>📦 Produtos</h2>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/products</span>
+                    <div class="endpoint-description">Listar produtos (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/products</span>
+                    <div class="endpoint-description">Criar novo produto (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method put">PUT</span>
+                    <span class="endpoint-path">/api/products/:id</span>
+                    <div class="endpoint-description">Atualizar produto (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method delete">DELETE</span>
+                    <span class="endpoint-path">/api/products/:id</span>
+                    <div class="endpoint-description">Deletar produto (apenas admin)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/debug/products</span>
+                    <div class="endpoint-description">Debug - Listar produtos (sem autenticação)</div>
+                </div>
+            </div>
+
+            <div class="endpoint-section">
+                <h2>📋 Listas Personalizadas</h2>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/custom-lists</span>
+                    <div class="endpoint-description">Listar listas personalizadas (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/custom-lists</span>
+                    <div class="endpoint-description">Criar nova lista personalizada (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/custom-lists/:listId</span>
+                    <div class="endpoint-description">Obter lista específica (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method put">PUT</span>
+                    <span class="endpoint-path">/api/custom-lists/:listId</span>
+                    <div class="endpoint-description">Atualizar lista personalizada (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/custom-lists/:listId/products/:productId</span>
+                    <div class="endpoint-description">Adicionar produto à lista (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method delete">DELETE</span>
+                    <span class="endpoint-path">/api/custom-lists/:listId/products/:productId</span>
+                    <div class="endpoint-description">Remover produto da lista (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/custom-lists/:listId/share</span>
+                    <div class="endpoint-description">Compartilhar lista com usuários (requer autenticação)</div>
+                </div>
+            </div>
+
+            <div class="endpoint-section">
+                <h2>💰 Vendas</h2>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/sales</span>
+                    <div class="endpoint-description">Listar vendas (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/sales</span>
+                    <div class="endpoint-description">Criar nova venda (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/sales/summary</span>
+                    <div class="endpoint-description">Resumo de vendas (apenas admin)</div>
+                </div>
+            </div>
+
+            <div class="endpoint-section">
+                <h2>⏳ Vendas em Progresso</h2>
+                <div class="endpoint-item">
+                    <span class="method get">GET</span>
+                    <span class="endpoint-path">/api/draft-sales</span>
+                    <div class="endpoint-description">Obter venda em progresso (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method post">POST</span>
+                    <span class="endpoint-path">/api/draft-sales</span>
+                    <div class="endpoint-description">Salvar/atualizar venda em progresso (requer autenticação)</div>
+                </div>
+                <div class="endpoint-item">
+                    <span class="method delete">DELETE</span>
+                    <span class="endpoint-path">/api/draft-sales</span>
+                    <div class="endpoint-description">Limpar venda em progresso (requer autenticação)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="cors-info">
+            <strong>🌐 CORS Configurado:</strong> A API aceita requisições dos domínios localhost:3000 e localhost:3005 com os métodos GET, POST, PUT, DELETE e OPTIONS.
+        </div>
+
+        <div class="footer">
+            <p>© 2024 API Lis - Sistema de Gerenciamento de Produtos e Vendas</p>
+        </div>
+    </div>
+</body>
+</html>`;
+
+  res.send(html);
 });
 
 module.exports = router;
