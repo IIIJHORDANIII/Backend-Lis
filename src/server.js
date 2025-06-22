@@ -830,150 +830,36 @@ app.get('/api/sales/summary', authenticate, async (req, res) => {
   }
 });
 
-// Middleware de autenticação
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ message: 'Token não fornecido' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
-    if (err) {
-      return res.status(403).json({ message: 'Token inválido' });
-    }
-    req.user = user;
-    next();
-  });
-};
-
-// Rota para obter resumo de vendas (apenas admin)
-router.get('/sales/summary', authenticateToken, async (req, res) => {
+// Rota para deletar vendas de um usuário específico (apenas admin)
+app.delete('/api/sales/user/:userId', authenticate, async (req, res) => {
   try {
     // Verificar se o usuário é admin
-    const user = await User.findById(req.user.id);
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ message: 'Acesso negado' });
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ 
+        message: 'Acesso negado. Apenas administradores podem zerar vendas.' 
+      });
     }
 
-    // Buscar todas as vendas com detalhes do usuário e produtos
-    const sales = await Sale.aggregate([
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userId',
-          foreignField: '_id',
-          as: 'user'
-        }
-      },
-      {
-        $unwind: '$user'
-      },
-      {
-        $lookup: {
-          from: 'products',
-          localField: 'products.productId',
-          foreignField: '_id',
-          as: 'productDetails'
-        }
-      },
-      {
-        $addFields: {
-          products: {
-            $map: {
-              input: '$products',
-              as: 'product',
-              in: {
-                $mergeObjects: [
-                  '$$product',
-                  {
-                    productDetails: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$productDetails',
-                            as: 'pd',
-                            cond: { $eq: ['$$pd._id', '$$product.productId'] }
-                          }
-                        },
-                        0
-                      ]
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          userId: 1,
-          userName: { $concat: ['$user.name', ' (', '$user.email', ')'] },
-          products: {
-            $map: {
-              input: '$products',
-              as: 'product',
-              in: {
-                productId: '$$product.productId',
-                name: '$$product.productDetails.name',
-                quantity: '$$product.quantity',
-                price: '$$product.productDetails.price'
-              }
-            }
-          },
-          total: 1,
-          commission: 1,
-          createdAt: 1
-        }
-      },
-      {
-        $sort: { createdAt: -1 }
-      }
-    ]);
+    const { userId } = req.params;
 
-    res.json(sales);
-  } catch (error) {
-    console.error('Erro ao buscar resumo de vendas:', error);
-    res.status(500).json({ message: 'Erro ao buscar resumo de vendas' });
-  }
-});
-
-// Rota para criar uma nova venda
-router.post('/sales', authenticateToken, async (req, res) => {
-  try {
-    const { products, total, commission } = req.body;
-    const userId = req.user.id;
-
-    // Validar dados
-    if (!products || !Array.isArray(products) || products.length === 0) {
-      return res.status(400).json({ message: 'Lista de produtos inválida' });
+    // Verificar se o usuário existe
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
     }
 
-    if (typeof total !== 'number' || total < 0) {
-      return res.status(400).json({ message: 'Valor total inválido' });
-    }
+    // Deletar todas as vendas do usuário
+    const result = await Sale.deleteMany({ userId: userId });
+    
+    console.log(`Vendas deletadas para o usuário ${userId}: ${result.deletedCount} vendas`);
 
-    if (typeof commission !== 'number' || commission < 0) {
-      return res.status(400).json({ message: 'Valor da comissão inválido' });
-    }
-
-    // Criar a venda
-    const sale = new Sale({
-      userId,
-      products,
-      total,
-      commission
+    res.status(200).json({ 
+      message: `Vendas zeradas com sucesso. ${result.deletedCount} vendas foram removidas.`,
+      deletedCount: result.deletedCount
     });
-
-    await sale.save();
-
-    res.status(201).json(sale);
   } catch (error) {
-    console.error('Erro ao registrar venda:', error);
-    res.status(500).json({ message: 'Erro ao registrar venda' });
+    console.error('Erro ao zerar vendas do usuário:', error);
+    res.status(500).json({ message: 'Erro interno do servidor ao zerar vendas' });
   }
 });
 
