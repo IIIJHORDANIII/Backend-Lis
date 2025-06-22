@@ -11,7 +11,7 @@ const s3 = new AWS.S3({
 });
 
 // Connect to MongoDB
-mongoose.connect(config.mongoURI, {
+mongoose.connect(config.mongodb.uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
