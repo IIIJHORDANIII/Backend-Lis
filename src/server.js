@@ -27,7 +27,17 @@ const io = socketIo(server, {
 
 // Middleware
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"];
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all origins for mobile development
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -35,7 +45,17 @@ app.use(cors({
 
 // Handle preflight requests
 app.options('*', cors({
-  origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"];
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all origins for mobile development
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -118,7 +138,11 @@ const authenticate = async (req, res, next) => {
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, cpf, password } = req.body;
-    const user = new User({ name, email, cpf, password });
+    const userData = { name, email, password };
+    if (cpf) {
+      userData.cpf = cpf;
+    }
+    const user = new User(userData);
     await user.save();
     res.status(201).json({ message: 'User created successfully' });
   } catch (error) {
@@ -179,7 +203,7 @@ app.post('/api/login', async (req, res) => {
 // Product routes
 app.post('/api/products', upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price, quantity } = req.body;
+    const { name, description, price, quantity, category } = req.body;
     
     if (!req.file) {
       return res.status(400).json({ error: 'Image is required' });
@@ -193,6 +217,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       description,
       price,
       quantity: parseInt(quantity) || 0,
+      category: category || 'masculino',
       image: imageUrl // Store S3 URL directly
     });
     
@@ -210,7 +235,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
 app.put('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, quantity } = req.body;
+    const { name, description, price, quantity, category } = req.body;
 
     const product = await Product.findById(id);
     if (!product) {
@@ -222,6 +247,7 @@ app.put('/api/products/:id', async (req, res) => {
     product.description = description;
     product.price = price;
     product.quantity = parseInt(quantity) || 0;
+    product.category = category || product.category;
 
     await product.save();
 
@@ -276,6 +302,7 @@ app.get('/api/debug/products', async (req, res) => {
     const productData = products.map(product => ({
       id: product._id,
       name: product.name,
+      category: product.category,
       image: product.image,
       createdAt: product.createdAt
     }));
@@ -577,6 +604,25 @@ const createAdminUser = async () => {
     }
   } catch (error) {
     console.error('Error creating admin user:', error);
+  }
+};
+
+// Migrate existing products to include category field
+const migrateProducts = async () => {
+  try {
+    const productsWithoutCategory = await Product.find({ category: { $exists: false } });
+    if (productsWithoutCategory.length > 0) {
+      console.log(`Migrating ${productsWithoutCategory.length} products to include category field...`);
+      
+      for (const product of productsWithoutCategory) {
+        product.category = 'masculino'; // Default category
+        await product.save();
+      }
+      
+      console.log('Product migration completed successfully');
+    }
+  } catch (error) {
+    console.error('Error migrating products:', error);
   }
 };
 
@@ -1330,4 +1376,5 @@ module.exports = router;
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   createAdminUser();
+  migrateProducts();
 });

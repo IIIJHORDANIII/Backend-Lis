@@ -13,8 +13,8 @@ const userSchema = new mongoose.Schema({
   },
   cpf: {
     type: String,
-    required: true,
-    unique: true
+    unique: true,
+    sparse: true
   },
   password: {
     type: String,
