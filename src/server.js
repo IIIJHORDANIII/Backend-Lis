@@ -11,10 +11,12 @@ const User = require('./models/User');
 const Product = require('./models/Product');
 const CustomList = require('./models/CustomList');
 const Sale = require('./models/Sale');
-const { uploadToS3 } = require('./services/s3Service');
+const { uploadToS3, deleteFromS3 } = require('./services/s3Service');
 const bcrypt = require('bcryptjs');
 const DraftSale = require('./models/DraftSale');
 const router = express.Router();
+const config = require('./config/config');
+const { cleanupS3Images } = require('./scripts/cleanupS3');
 
 const app = express();
 const server = http.createServer(app);
@@ -217,7 +219,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       description,
       price,
       quantity: parseInt(quantity) || 0,
-      category: category || 'masculino',
+      category: category || 'masculino', // Default category
       image: imageUrl // Store S3 URL directly
     });
     
@@ -247,13 +249,54 @@ app.put('/api/products/:id', async (req, res) => {
     product.description = description;
     product.price = price;
     product.quantity = parseInt(quantity) || 0;
-    product.category = category || product.category;
+    if (category) {
+      product.category = category;
+    }
 
     await product.save();
 
     res.json(product);
   } catch (error) {
     console.error('Error updating product:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Add PUT route for updating products with image
+app.put('/api/products/:id/with-image', upload.single('image'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, price, quantity, category } = req.body;
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // If a new image is uploaded, delete the old one from S3
+    if (req.file) {
+      // Delete old image from S3
+      await deleteFromS3(product.image);
+      
+      // Upload new image to S3
+      const imageUrl = await uploadToS3(req.file);
+      product.image = imageUrl;
+    }
+
+    // Update product fields
+    product.name = name;
+    product.description = description;
+    product.price = price;
+    product.quantity = parseInt(quantity) || 0;
+    if (category) {
+      product.category = category;
+    }
+
+    await product.save();
+
+    res.json(product);
+  } catch (error) {
+    console.error('Error updating product with image:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -302,7 +345,6 @@ app.get('/api/debug/products', async (req, res) => {
     const productData = products.map(product => ({
       id: product._id,
       name: product.name,
-      category: product.category,
       image: product.image,
       createdAt: product.createdAt
     }));
@@ -332,6 +374,34 @@ app.delete('/api/products/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error deleting product:', error);
     res.status(400).json({ error: error.message });
+  }
+});
+
+// S3 Cleanup endpoint (admin only)
+app.post('/api/admin/cleanup-s3', authenticate, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ error: 'Only admins can perform S3 cleanup' });
+    }
+
+    console.log('S3 cleanup requested by admin:', req.user.email);
+    
+    // Run cleanup in background
+    cleanupS3Images()
+      .then(() => {
+        console.log('S3 cleanup completed successfully');
+      })
+      .catch(error => {
+        console.error('S3 cleanup failed:', error);
+      });
+
+    res.status(200).json({ 
+      message: 'S3 cleanup started. Check server logs for progress.' 
+    });
+  } catch (error) {
+    console.error('Error starting S3 cleanup:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -604,25 +674,6 @@ const createAdminUser = async () => {
     }
   } catch (error) {
     console.error('Error creating admin user:', error);
-  }
-};
-
-// Migrate existing products to include category field
-const migrateProducts = async () => {
-  try {
-    const productsWithoutCategory = await Product.find({ category: { $exists: false } });
-    if (productsWithoutCategory.length > 0) {
-      console.log(`Migrating ${productsWithoutCategory.length} products to include category field...`);
-      
-      for (const product of productsWithoutCategory) {
-        product.category = 'masculino'; // Default category
-        await product.save();
-      }
-      
-      console.log('Product migration completed successfully');
-    }
-  } catch (error) {
-    console.error('Error migrating products:', error);
   }
 };
 
@@ -1376,5 +1427,4 @@ module.exports = router;
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   createAdminUser();
-  migrateProducts();
 });
