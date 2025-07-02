@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "cleanup-s3": "node src/scripts/cleanupS3.js"
+    "cleanup-s3": "node src/scripts/cleanupS3.js",
+    "check-env": "node src/scripts/checkEnv.js"
   },
   "keywords": [],
   "author": "",

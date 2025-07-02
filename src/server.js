@@ -33,11 +33,19 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or Postman)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"];
+    const allowedOrigins = [
+      "http://localhost:3000", 
+      "http://localhost:3005", 
+      "https://frontend-lis.vercel.app", 
+      "https://lismodas.com.br",
+      "https://www.lismodas.com.br"
+    ];
+    
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      callback(null, true); // Allow all origins for mobile development
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
@@ -68,7 +76,21 @@ app.use('/uploads', express.static('uploads'));
 
 // Multer configuration for file uploads
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    // Check file type
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
 
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI, {
@@ -203,9 +225,14 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Product routes
-app.post('/api/products', upload.single('image'), async (req, res) => {
+app.post('/api/products', authenticate, upload.single('image'), async (req, res) => {
   try {
     const { name, description, price, quantity, category } = req.body;
+    
+    // Validate required fields
+    if (!name || !description || !price) {
+      return res.status(400).json({ error: 'Name, description, and price are required' });
+    }
     
     if (!req.file) {
       return res.status(400).json({ error: 'Image is required' });
@@ -218,6 +245,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       name,
       description,
       price,
+      commission: parseFloat(req.body.commission) || 0,
       quantity: parseInt(quantity) || 0,
       category: category || 'masculino', // Default category
       image: imageUrl // Store S3 URL directly
@@ -229,6 +257,20 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
     res.status(201).json(product);
   } catch (error) {
     console.error('Error creating product:', error);
+    
+    // Handle specific error types
+    if (error.message === 'Only image files are allowed') {
+      return res.status(400).json({ error: 'Only image files are allowed' });
+    }
+    
+    if (error.message === 'File too large') {
+      return res.status(400).json({ error: 'File size must be less than 5MB' });
+    }
+    
+    if (error.message === 'Failed to upload image to S3') {
+      return res.status(500).json({ error: 'Failed to upload image. Please try again.' });
+    }
+    
     res.status(400).json({ error: error.message });
   }
 });
@@ -263,7 +305,7 @@ app.put('/api/products/:id', async (req, res) => {
 });
 
 // Add PUT route for updating products with image
-app.put('/api/products/:id/with-image', upload.single('image'), async (req, res) => {
+app.put('/api/products/:id/with-image', authenticate, upload.single('image'), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, price, quantity, category } = req.body;
@@ -297,6 +339,20 @@ app.put('/api/products/:id/with-image', upload.single('image'), async (req, res)
     res.json(product);
   } catch (error) {
     console.error('Error updating product with image:', error);
+    
+    // Handle specific error types
+    if (error.message === 'Only image files are allowed') {
+      return res.status(400).json({ error: 'Only image files are allowed' });
+    }
+    
+    if (error.message === 'File too large') {
+      return res.status(400).json({ error: 'File size must be less than 5MB' });
+    }
+    
+    if (error.message === 'Failed to upload image to S3') {
+      return res.status(500).json({ error: 'Failed to upload image. Please try again.' });
+    }
+    
     res.status(400).json({ error: error.message });
   }
 });
@@ -374,6 +430,47 @@ app.delete('/api/products/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error deleting product:', error);
     res.status(400).json({ error: error.message });
+  }
+});
+
+// S3 Test endpoint (admin only)
+app.get('/api/admin/test-s3', authenticate, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ error: 'Only admins can test S3 configuration' });
+    }
+
+    console.log('S3 test requested by admin:', req.user.email);
+    
+    // Test S3 configuration
+    const { s3 } = require('./services/s3Service');
+    const config = require('./config/config');
+    
+    // Try to list objects in bucket
+    const listParams = {
+      Bucket: config.aws.bucketName,
+      MaxKeys: 1
+    };
+    
+    try {
+      await s3.listObjectsV2(listParams).promise();
+      res.status(200).json({ 
+        message: 'S3 configuration is working correctly',
+        bucket: config.aws.bucketName,
+        region: config.aws.region
+      });
+    } catch (s3Error) {
+      console.error('S3 test failed:', s3Error);
+      res.status(500).json({ 
+        error: 'S3 configuration test failed',
+        details: s3Error.message,
+        code: s3Error.code
+      });
+    }
+  } catch (error) {
+    console.error('Error testing S3:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1307,10 +1404,37 @@ app.get('/', (req, res) => {
   res.send(html);
 });
 
-module.exports = router;
+// Global error handling middleware
+app.use((error, req, res, next) => {
+  console.error('Global error handler:', error);
+  
+  // Handle multer errors
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File size must be less than 5MB' });
+    }
+    if (error.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ error: 'Only one file is allowed' });
+    }
+    if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: 'Unexpected file field' });
+    }
+    return res.status(400).json({ error: 'File upload error' });
+  }
+  
+  // Handle other errors
+  if (error.message === 'Only image files are allowed') {
+    return res.status(400).json({ error: 'Only image files are allowed' });
+  }
+  
+  // Default error response
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  createAdminUser();
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 API available at http://localhost:${PORT}/api`);
+  console.log(`🌐 CORS enabled for development`);
 });
