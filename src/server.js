@@ -22,7 +22,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"],
+    origin: ["http://localhost:3000", "http://localhost:3005", "lismodas.com.br", "https://www.lismodas.com.br"],
     methods: ["GET", "POST"]
   }
 });
