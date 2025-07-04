@@ -35,7 +35,8 @@ app.use(cors({
     
     const allowedOrigins = [
       "http://localhost:3000", 
-      "http://localhost:3005", 
+      "http://localhost:3005",
+      "http://localhost:8081", 
       "https://frontend-lis.vercel.app", 
       "https://lismodas.com.br",
       "https://www.lismodas.com.br"
