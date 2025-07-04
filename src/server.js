@@ -227,11 +227,17 @@ app.post('/api/login', async (req, res) => {
 // Product routes
 app.post('/api/products', authenticate, upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price, quantity, category } = req.body;
+    const { name, description, costPrice, quantity, category } = req.body;
     
     // Validate required fields
-    if (!name || !description || !price) {
-      return res.status(400).json({ error: 'Name, description, and price are required' });
+    if (!name || !description || !costPrice) {
+      return res.status(400).json({ error: 'Name, description, and cost price are required' });
+    }
+    
+    // Validate costPrice is a valid number
+    const costPriceValue = parseFloat(costPrice);
+    if (isNaN(costPriceValue) || costPriceValue <= 0) {
+      return res.status(400).json({ error: 'Cost price must be a valid number greater than zero' });
     }
     
     if (!req.file) {
@@ -244,8 +250,7 @@ app.post('/api/products', authenticate, upload.single('image'), async (req, res)
     const product = new Product({
       name,
       description,
-      price,
-      commission: parseFloat(req.body.commission) || 0,
+      costPrice: costPriceValue,
       quantity: parseInt(quantity) || 0,
       category: category || 'masculino', // Default category
       image: imageUrl // Store S3 URL directly
@@ -279,7 +284,7 @@ app.post('/api/products', authenticate, upload.single('image'), async (req, res)
 app.put('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, quantity, category } = req.body;
+    const { name, description, costPrice, quantity, category } = req.body;
 
     const product = await Product.findById(id);
     if (!product) {
@@ -289,7 +294,7 @@ app.put('/api/products/:id', async (req, res) => {
     // Update product fields
     product.name = name;
     product.description = description;
-    product.price = price;
+    product.costPrice = parseFloat(costPrice);
     product.quantity = parseInt(quantity) || 0;
     if (category) {
       product.category = category;
@@ -308,7 +313,7 @@ app.put('/api/products/:id', async (req, res) => {
 app.put('/api/products/:id/with-image', authenticate, upload.single('image'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, quantity, category } = req.body;
+    const { name, description, costPrice, quantity, category } = req.body;
 
     const product = await Product.findById(id);
     if (!product) {
@@ -328,7 +333,7 @@ app.put('/api/products/:id/with-image', authenticate, upload.single('image'), as
     // Update product fields
     product.name = name;
     product.description = description;
-    product.price = price;
+    product.costPrice = parseFloat(costPrice);
     product.quantity = parseInt(quantity) || 0;
     if (category) {
       product.category = category;
@@ -425,8 +430,11 @@ app.delete('/api/products/:id', authenticate, async (req, res) => {
     }
 
     await product.deleteOne();
+
+    // Remover todas as vendas relacionadas a esse produto
+    await Sale.deleteMany({ 'products.productId': product._id });
     
-    res.status(200).json({ message: 'Product deleted successfully' });
+    res.status(200).json({ message: 'Product and related sales deleted successfully' });
   } catch (error) {
     console.error('Error deleting product:', error);
     res.status(400).json({ error: error.message });
@@ -650,6 +658,9 @@ app.delete('/api/custom-lists/:listId/products/:productId', authenticate, async 
     list.products = list.products.filter(id => id.toString() !== productId);
     await list.save();
 
+    // Remover todas as vendas relacionadas a esse produto
+    await Sale.deleteMany({ 'products.productId': productId });
+
     await list.populate('products');
     res.json(list);
   } catch (error) {
@@ -794,9 +805,16 @@ app.get('/api/users', authenticate, async (req, res) => {
 app.get('/api/sales', authenticate, async (req, res) => {
   try {
     const query = req.user.isAdmin ? {} : { userId: req.user._id };
-    const sales = await Sale.find(query)
-      .populate('products.productId')
-      .sort({ createdAt: -1 });
+    let sales = [];
+    try {
+      sales = await Sale.find(query)
+        .populate('products.productId')
+        .sort({ createdAt: -1 });
+    } catch (err) {
+      // Se der erro no populate (ex: produto órfão), retorna array vazio
+      console.error('Erro ao buscar vendas (populate):', err);
+      sales = [];
+    }
     res.json(sales);
   } catch (error) {
     console.error('Error fetching sales:', error);

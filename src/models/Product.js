@@ -10,14 +10,21 @@ const productSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  price: {
+  costPrice: {
+    type: Number,
+    required: true
+  },
+  finalPrice: {
     type: Number,
     required: true
   },
   commission: {
     type: Number,
-    required: true,
-    default: 0
+    required: true
+  },
+  profit: {
+    type: Number,
+    required: true
   },
   quantity: {
     type: Number,
@@ -34,6 +41,42 @@ const productSchema = new mongoose.Schema({
     required: true
   }
 }, { timestamps: true });
+
+// Middleware para calcular preços automaticamente antes de salvar
+productSchema.pre('save', function(next) {
+  // Sempre calcular os valores se costPrice estiver presente
+  if (this.costPrice) {
+    // Fórmula: PreçoVenda = (PreçoCusto * 2) / 0.70
+    this.finalPrice = (this.costPrice * 2) / 0.70;
+    
+    // Comissão fixa de 30%
+    this.commission = this.finalPrice * 0.30;
+    
+    // Lucro = Preço Final - Preço Custo - Comissão
+    this.profit = this.finalPrice - this.costPrice - this.commission;
+  }
+  next();
+});
+
+// Middleware de validação para garantir que os campos calculados existam
+productSchema.pre('validate', function(next) {
+  if (this.costPrice && !this.finalPrice) {
+    // Fórmula: PreçoVenda = (PreçoCusto * 2) / 0.70
+    this.finalPrice = (this.costPrice * 2) / 0.70;
+  }
+  
+  if (this.finalPrice && !this.commission) {
+    // Comissão fixa de 30%
+    this.commission = this.finalPrice * 0.30;
+  }
+  
+  if (this.finalPrice && this.costPrice && this.commission && !this.profit) {
+    // Lucro = Preço Final - Preço Custo - Comissão
+    this.profit = this.finalPrice - this.costPrice - this.commission;
+  }
+  
+  next();
+});
 
 // Middleware to delete image from S3 when product is deleted
 productSchema.pre('deleteOne', { document: true, query: false }, async function(next) {
