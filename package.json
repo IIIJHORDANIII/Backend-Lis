@@ -7,7 +7,9 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "cleanup-s3": "node src/scripts/cleanupS3.js",
-    "check-env": "node src/scripts/checkEnv.js"
+    "check-env": "node src/scripts/checkEnv.js",
+    "reprocess-images": "node src/scripts/reprocessImages.js",
+    "reprocess-images-alt": "node src/scripts/reprocessImagesAlt.js"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +23,8 @@
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.3",
     "multer": "^1.4.5-lts.1",
+    "node-fetch": "^2.7.0",
+    "sharp": "^0.34.2",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

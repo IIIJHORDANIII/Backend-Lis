@@ -22,7 +22,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3005", "lismodas.com.br", "https://www.lismodas.com.br"],
+    origin: ["http://localhost:3005", "http://localhost:8081", "https://www.lismodas.com.br"],
     methods: ["GET", "POST"]
   }
 });
@@ -33,12 +33,9 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or Postman)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = [
-      "http://localhost:3000", 
+    const allowedOrigins = [,
       "http://localhost:3005",
       "http://localhost:8081", 
-      "https://frontend-lis.vercel.app", 
-      "https://lismodas.com.br",
       "https://www.lismodas.com.br"
     ];
     
@@ -60,7 +57,7 @@ app.options('*', cors({
     // Allow requests with no origin (like mobile apps or Postman)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = ["http://localhost:3000", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"];
+    const allowedOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3005", "https://frontend-lis.vercel.app", "https://www.jhorello.com.br"];
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -326,7 +323,7 @@ app.put('/api/products/:id/with-image', authenticate, upload.single('image'), as
       // Delete old image from S3
       await deleteFromS3(product.image);
       
-      // Upload new image to S3
+      // Upload new image to S3 (já processada para 9:16)
       const imageUrl = await uploadToS3(req.file);
       product.image = imageUrl;
     }
@@ -1263,6 +1260,7 @@ app.get('/', (req, res) => {
                 <h3>🌐 CORS</h3>
                 <p><strong>Origens permitidas:</strong></p>
                 <p>• http://localhost:3000</p>
+                <p>• http://localhost:3001</p>
                 <p>• http://localhost:3005</p>
                 <p>• https://www.jhorello.com.br</p>
                 <p>• https://frontend-lis.vercel.app</p>
@@ -1410,7 +1408,7 @@ app.get('/', (req, res) => {
         </div>
 
         <div class="cors-info">
-            <strong>🌐 CORS Configurado:</strong> A API aceita requisições dos domínios localhost:3000,localhost:3005 ,https://www.jhorello.com.br e https://frontend-lis.vercel.app com os métodos GET, POST, PUT, DELETE e OPTIONS.
+            <strong>🌐 CORS Configurado:</strong> A API aceita requisições dos domínios localhost:3000, localhost:3001, localhost:3005, https://www.jhorello.com.br e https://frontend-lis.vercel.app com os métodos GET, POST, PUT, DELETE e OPTIONS.
         </div>
 
         <div class="footer">

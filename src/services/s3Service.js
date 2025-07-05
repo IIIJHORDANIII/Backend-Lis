@@ -1,5 +1,6 @@
 const AWS = require('aws-sdk');
 const config = require('../config/config');
+const { processImageTo9x16 } = require('./imageProcessor');
 
 // Validate AWS configuration
 const validateAWSConfig = () => {
@@ -46,17 +47,22 @@ const uploadToS3 = async (file) => {
     throw new Error('Only image files are allowed');
   }
 
-  const params = {
-    Bucket: config.aws.bucketName,
-    Key: `products/${Date.now()}-${file.originalname}`,
-    Body: file.buffer,
-    ContentType: file.mimetype,
-    ACL: 'public-read'
-  };
-
   try {
+    // Processar imagem para formato 9:16
+    console.log('Processando imagem para formato 9:16...');
+    const processedImageBuffer = await processImageTo9x16(file.buffer);
+    console.log('Imagem processada com sucesso');
+
+    const params = {
+      Bucket: config.aws.bucketName,
+      Key: `products/${Date.now()}-${file.originalname}`,
+      Body: processedImageBuffer,
+      ContentType: 'image/jpeg', // Sempre JPEG após processamento
+      ACL: 'public-read'
+    };
+
     const result = await s3.upload(params).promise();
-    console.log(`Successfully uploaded image to S3: ${result.Location}`);
+    console.log(`Successfully uploaded processed image to S3: ${result.Location}`);
     return result.Location;
   } catch (error) {
     console.error('Error uploading to S3:', error);
