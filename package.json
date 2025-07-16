@@ -9,7 +9,8 @@
     "cleanup-s3": "node src/scripts/cleanupS3.js",
     "check-env": "node src/scripts/checkEnv.js",
     "reprocess-images": "node src/scripts/reprocessImages.js",
-    "reprocess-images-alt": "node src/scripts/reprocessImagesAlt.js"
+    "reprocess-images-alt": "node src/scripts/reprocessImagesAlt.js",
+    "cleanup-orphaned": "node src/scripts/cleanupOrphanedProducts.js"
   },
   "keywords": [],
   "author": "",

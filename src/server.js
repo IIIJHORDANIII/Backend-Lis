@@ -530,25 +530,93 @@ app.post('/api/custom-lists', authenticate, async (req, res) => {
   }
 });
 
+// Get all custom lists (corrigir formato dos produtos)
 app.get('/api/custom-lists', authenticate, async (req, res) => {
   try {
-    
+    const currentUserId = req.user._id;
+    let lists;
     if (req.user.isAdmin) {
-      // Admins can see all lists
-      const lists = await CustomList.find().populate('products');
-      return res.json(lists);
+      lists = await CustomList.find();
+    } else {
+      lists = await CustomList.find({
+        $or: [
+          { userId: req.user._id },
+          { sharedWith: req.user._id },
+          { isPublic: true }
+        ]
+      });
     }
-
-    // For regular users, only show their own lists and shared lists
-    const lists = await CustomList.find({
-      $or: [
-        { userId: req.user._id },
-        { sharedWith: req.user._id },
-        { isPublic: true }
-      ]
-    }).populate('products');
-
-    res.json(lists);
+    // Para cada lista, filtrar produtos que existem
+    const allProducts = await Product.find({}, '_id');
+    const validProductIds = new Set(allProducts.map(p => p._id.toString()));
+    // Guardar ids de listas a serem removidas
+    const listsToRemove = [];
+    for (const list of lists) {
+      const originalLength = list.products.length;
+      list.products = list.products.filter(item => {
+        // Handle both old format (string) and new format (object with productId)
+        let productId;
+        if (typeof item === 'string') {
+          productId = item;
+        } else if (item && item.productId) {
+          productId = item.productId;
+        } else {
+          return false; // Invalid item, filter it out
+        }
+        
+        // Check if the productId is valid
+        return validProductIds.has(productId.toString());
+      });
+      
+      if (list.products.length !== originalLength) {
+        await list.save();
+      }
+      // Se a lista ficou vazia, marcar para remover
+      if (list.products.length === 0) {
+        listsToRemove.push(list._id);
+      }
+    }
+    // Remover listas vazias
+    if (listsToRemove.length > 0) {
+      await CustomList.deleteMany({ _id: { $in: listsToRemove } });
+      // Remover as listas do array local
+      lists = lists.filter(list => !listsToRemove.includes(list._id.toString()));
+    }
+    // Popular e formatar para o frontend
+    const populatedLists = await Promise.all(lists.map(async (list) => {
+      const populatedProducts = await Promise.all(
+        list.products.map(async (item) => {
+          // Handle both old format (string) and new format (object with productId)
+          let productId, quantity;
+          if (typeof item === 'string') {
+            productId = item;
+            quantity = 1; // Default quantity for old format
+          } else if (item && item.productId) {
+            productId = item.productId;
+            quantity = item.quantity || 1;
+          } else {
+            // Skip invalid items
+            return null;
+          }
+          
+          const product = await Product.findById(productId);
+          return {
+            productId: productId,
+            quantity: quantity,
+            product: product
+          };
+        })
+      );
+      
+      // Filter out null items (invalid products)
+      const validProducts = populatedProducts.filter(item => item !== null);
+      
+      return {
+        ...list.toObject(),
+        products: validProducts
+      };
+    }));
+    res.json(populatedLists);
   } catch (error) {
     console.error('Error fetching custom lists:', error);
     res.status(500).json({ error: error.message });
@@ -578,16 +646,99 @@ app.put('/api/custom-lists/:listId', authenticate, async (req, res) => {
     // Update list fields
     if (name !== undefined) list.name = name;
     if (description !== undefined) list.description = description;
-    if (products !== undefined) list.products = products;
+    if (products !== undefined) {
+      // Calcular diferenças de estoque antes de atualizar
+      const oldProducts = new Map();
+      list.products.forEach(item => {
+        let productId, quantity;
+        if (typeof item === 'string') {
+          productId = item;
+          quantity = 1;
+        } else if (item && item.productId) {
+          productId = item.productId.toString();
+          quantity = item.quantity || 1;
+        } else {
+          return;
+        }
+        oldProducts.set(productId, quantity);
+      });
+
+      // Se products é um array de strings (IDs), converter para o novo formato
+      if (Array.isArray(products) && products.length > 0 && typeof products[0] === 'string') {
+        list.products = products.map(productId => ({ productId, quantity: 1 }));
+      } else {
+        list.products = products;
+      }
+
+      // Calcular diferenças e ajustar estoque
+      const newProducts = new Map();
+      list.products.forEach(item => {
+        let productId, quantity;
+        if (typeof item === 'string') {
+          productId = item;
+          quantity = 1;
+        } else if (item && item.productId) {
+          productId = item.productId.toString();
+          quantity = item.quantity || 1;
+        } else {
+          return;
+        }
+        newProducts.set(productId, quantity);
+      });
+
+      // Ajustar estoque baseado nas diferenças
+      for (const [productId, newQuantity] of newProducts) {
+        const oldQuantity = oldProducts.get(productId) || 0;
+        const difference = newQuantity - oldQuantity;
+        
+        if (difference !== 0) {
+          const product = await Product.findById(productId);
+          if (product) {
+            if (difference > 0) {
+              // Produto foi adicionado ou quantidade aumentou
+              if (product.quantity >= difference) {
+                product.quantity = Math.max(0, product.quantity - difference);
+                await product.save();
+              }
+            } else {
+              // Produto foi removido ou quantidade diminuiu
+              product.quantity += Math.abs(difference);
+              await product.save();
+            }
+          }
+        }
+      }
+
+      // Remover produtos que não estão mais na lista
+      for (const [productId, oldQuantity] of oldProducts) {
+        if (!newProducts.has(productId)) {
+          const product = await Product.findById(productId);
+          if (product) {
+            product.quantity += oldQuantity;
+            await product.save();
+          }
+        }
+      }
+    }
     if (sharedWith !== undefined) list.sharedWith = sharedWith;
     if (isPublic !== undefined) list.isPublic = isPublic;
 
     await list.save();
     
     // Populate products before returning
-    await list.populate('products');
+    await list.populate('products.productId');
     
-    res.json(list);
+    // Transformar os dados para o formato esperado pelo frontend
+    const transformedList = {
+      ...list.toObject(),
+      products: list.products.map(item => ({
+        productId: item.productId?._id || item.productId,
+        quantity: item.quantity,
+        product: item.productId
+      }))
+    };
+    
+    res.json(transformedList);
   } catch (error) {
     console.error('Error updating custom list:', error);
     res.status(500).json({ error: error.message });
@@ -598,7 +749,9 @@ app.put('/api/custom-lists/:listId', authenticate, async (req, res) => {
 app.post('/api/custom-lists/:listId/products/:productId', authenticate, async (req, res) => {
   try {
     const { listId, productId } = req.params;
+    const { quantity } = req.body;
     const currentUserId = req.user._id;
+    const qty = Math.max(1, parseInt(quantity) || 1);
 
     const list = await CustomList.findById(listId);
     if (!list) {
@@ -608,7 +761,6 @@ app.post('/api/custom-lists/:listId/products/:productId', authenticate, async (r
     // Check if user has permission to edit
     const hasEditPermission = req.user.isAdmin || 
                              list.userId.toString() === currentUserId.toString();
-    
     if (!hasEditPermission) {
       return res.status(403).json({ error: 'Permission denied' });
     }
@@ -619,14 +771,76 @@ app.post('/api/custom-lists/:listId/products/:productId', authenticate, async (r
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Add product if not already in list
-    if (!list.products.includes(productId)) {
-      list.products.push(productId);
-      await list.save();
+    // Verifica se já existe esse produto na lista
+    const existing = list.products.find(p => {
+      // Handle both old format (string) and new format (object with productId)
+      let itemProductId;
+      if (typeof p === 'string') {
+        itemProductId = p;
+      } else if (p && p.productId) {
+        itemProductId = p.productId;
+      } else {
+        return false; // Invalid item, skip it
+      }
+      
+      return itemProductId.toString() === productId;
+    });
+    
+    if (existing) {
+      // Se o produto já existe, adiciona a quantidade à lista E desconta do estoque
+      existing.quantity += qty;
+    } else {
+      // Se é um produto novo na lista, adiciona e desconta do estoque
+      list.products.push({ productId, quantity: qty });
+    }
+    await list.save();
+
+    // Desconta do estoque do admin (sempre, independente se é novo ou existente)
+    if (product.quantity >= qty) {
+      product.quantity = Math.max(0, product.quantity - qty);
+      await product.save();
+    } else {
+      console.error('Estoque insuficiente. Disponível:', product.quantity, 'Solicitado:', qty);
     }
 
-    await list.populate('products');
-    res.json(list);
+    // Buscar a lista novamente para garantir que temos os dados corretos
+    const updatedList = await CustomList.findById(listId);
+    
+    // Populate manualmente os produtos
+    const populatedProducts = await Promise.all(
+      updatedList.products.map(async (item) => {
+        // Handle both old format (string) and new format (object with productId)
+        let productId, quantity;
+        if (typeof item === 'string') {
+          productId = item;
+          quantity = 1; // Default quantity for old format
+        } else if (item && item.productId) {
+          productId = item.productId;
+          quantity = item.quantity || 1;
+        } else {
+          // Skip invalid items
+          return null;
+        }
+        
+        const product = await Product.findById(productId);
+        return {
+          productId: productId,
+          quantity: quantity,
+          product: product
+        };
+      })
+    );
+    
+    // Filter out null items (invalid products)
+    const validProducts = populatedProducts.filter(item => item !== null);
+    
+    // Formata para o frontend
+    const transformedList = {
+      ...updatedList.toObject(),
+      products: validProducts
+    };
+    
+    res.json(transformedList);
   } catch (error) {
     console.error('Error adding product to list:', error);
     res.status(500).json({ error: error.message });
@@ -652,14 +866,58 @@ app.delete('/api/custom-lists/:listId/products/:productId', authenticate, async 
       return res.status(403).json({ error: 'Permission denied' });
     }
 
+    // Encontrar o produto na lista antes de remover para saber a quantidade
+    const productToRemove = list.products.find(item => {
+      // Handle both old format (string) and new format (object with productId)
+      let itemProductId;
+      if (typeof item === 'string') {
+        itemProductId = item;
+      } else if (item && item.productId) {
+        itemProductId = item.productId;
+      } else {
+        return false;
+      }
+      
+      return itemProductId.toString() === productId;
+    });
+
     // Remove product from list
-    list.products = list.products.filter(id => id.toString() !== productId);
+    list.products = list.products.filter(item => {
+      // Handle both old format (string) and new format (object with productId)
+      let itemProductId;
+      if (typeof item === 'string') {
+        itemProductId = item;
+      } else if (item && item.productId) {
+        itemProductId = item.productId;
+      } else {
+        return true; // Keep invalid items for now, they'll be filtered out later
+      }
+      
+      return itemProductId.toString() !== productId;
+    });
     await list.save();
+
+    // Devolver a quantidade ao estoque se encontrou o produto
+    if (productToRemove) {
+      let quantityToReturn = 1; // Default para formato antigo
+      if (productToRemove.quantity) {
+        quantityToReturn = productToRemove.quantity;
+      }
+      
+      const product = await Product.findById(productId);
+      if (product) {
+        product.quantity += quantityToReturn;
+        await product.save();
+      }
+    }
 
     // Remover todas as vendas relacionadas a esse produto
     await Sale.deleteMany({ 'products.productId': productId });
 
-    await list.populate('products');
+    await list.populate({
+      path: 'products',
+      match: { _id: { $exists: true } }
+    });
     res.json(list);
   } catch (error) {
     console.error('Error removing product from list:', error);
@@ -701,7 +959,7 @@ app.post('/api/custom-lists/:listId/share', authenticate, async (req, res) => {
   }
 });
 
-// Get specific custom list by ID
+// Get specific custom list by ID (corrigir formato dos produtos)
 app.get('/api/custom-lists/:listId', authenticate, async (req, res) => {
   try {
     const { listId } = req.params;
@@ -712,7 +970,7 @@ app.get('/api/custom-lists/:listId', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Invalid list ID format' });
     }
 
-    const list = await CustomList.findById(listId).populate('products');
+    const list = await CustomList.findById(listId);
     if (!list) {
       return res.status(404).json({ error: 'List not found' });
     }
@@ -727,12 +985,67 @@ app.get('/api/custom-lists/:listId', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Permission denied' });
     }
 
-    res.json(list);
+    // Filtrar produtos que existem
+    const allProducts = await Product.find({}, '_id');
+    const validProductIds = new Set(allProducts.map(p => p._id.toString()));
+    const originalLength = list.products.length;
+    list.products = list.products.filter(item => {
+      // Handle both old format (string) and new format (object with productId)
+      let productId;
+      if (typeof item === 'string') {
+        productId = item;
+      } else if (item && item.productId) {
+        productId = item.productId;
+      } else {
+        return false; // Invalid item, filter it out
+      }
+      
+      // Check if the productId is valid
+      return validProductIds.has(productId.toString());
+    });
+    
+    if (list.products.length !== originalLength) {
+      await list.save();
+    }
+    // Se a lista ficou vazia, exclua
+    if (list.products.length === 0) {
+      await CustomList.deleteOne({ _id: list._id });
+      return res.status(404).json({ error: 'List not found (empty after cleanup)' });
+    }
+    // Popular e formatar para o frontend
+    const populatedProducts = await Promise.all(
+      list.products.map(async (item) => {
+        // Handle both old format (string) and new format (object with productId)
+        let productId, quantity;
+        if (typeof item === 'string') {
+          productId = item;
+          quantity = 1; // Default quantity for old format
+        } else if (item && item.productId) {
+          productId = item.productId;
+          quantity = item.quantity || 1;
+        } else {
+          // Skip invalid items
+          return null;
+        }
+        
+        const product = await Product.findById(productId);
+        return {
+          productId: productId,
+          quantity: quantity,
+          product: product
+        };
+      })
+    );
+    
+    // Filter out null items (invalid products)
+    const validProducts = populatedProducts.filter(item => item !== null);
+    const transformedList = {
+      ...list.toObject(),
+      products: validProducts
+    };
+    res.json(transformedList);
   } catch (error) {
     console.error('Error fetching custom list:', error);
-    if (error.name === 'CastError') {
-      return res.status(400).json({ error: 'Invalid list ID format' });
-    }
     res.status(500).json({ error: error.message });
   }
 });
