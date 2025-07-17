@@ -37,9 +37,9 @@ const uploadToS3 = async (file) => {
     throw new Error('No file or file buffer provided');
   }
 
-  // Validate file size (5MB limit)
-  if (file.size > 5 * 1024 * 1024) {
-    throw new Error('File size exceeds 5MB limit');
+  // Validate file size (15MB limit)
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error('File size exceeds 15MB limit');
   }
 
   // Validate file type

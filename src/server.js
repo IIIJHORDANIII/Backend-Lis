@@ -77,7 +77,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 15 * 1024 * 1024, // 15MB limit
     files: 1
   },
   fileFilter: (req, file, cb) => {
@@ -267,7 +267,7 @@ app.post('/api/products', authenticate, upload.single('image'), async (req, res)
     }
     
     if (error.message === 'File too large') {
-      return res.status(400).json({ error: 'File size must be less than 5MB' });
+      return res.status(400).json({ error: 'File size must be less than 15MB' });
     }
     
     if (error.message === 'Failed to upload image to S3') {
@@ -349,7 +349,7 @@ app.put('/api/products/:id/with-image', authenticate, upload.single('image'), as
     }
     
     if (error.message === 'File too large') {
-      return res.status(400).json({ error: 'File size must be less than 5MB' });
+      return res.status(400).json({ error: 'File size must be less than 15MB' });
     }
     
     if (error.message === 'Failed to upload image to S3') {
@@ -1741,7 +1741,7 @@ app.use((error, req, res, next) => {
   // Handle multer errors
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size must be less than 5MB' });
+      return res.status(400).json({ error: 'File size must be less than 15MB' });
     }
     if (error.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({ error: 'Only one file is allowed' });

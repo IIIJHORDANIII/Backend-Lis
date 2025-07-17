@@ -118,7 +118,7 @@ Crie um usuário IAM com as seguintes permissões:
 
 ## Limitações e Validações
 
-- **Tamanho máximo do arquivo:** 5MB
+- **Tamanho máximo do arquivo:** 15MB
 - **Tipos de arquivo permitidos:** Apenas imagens (image/*)
 - **Autenticação:** Todas as rotas de upload requerem autenticação
 - **Permissões:** Apenas admins podem fazer upload de produtos

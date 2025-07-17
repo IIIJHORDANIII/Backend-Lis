@@ -95,7 +95,7 @@ src/
    - Verifique se as credenciais AWS estão corretas
    - Confirme se o usuário IAM tem as permissões necessárias
 
-3. **Erro: "File size exceeds 5MB limit"**
+3. **Erro: "File size exceeds 15MB limit"**
    - Reduza o tamanho da imagem antes do upload
    - Use compressão de imagem se necessário
 
@@ -144,7 +144,7 @@ src/
 - Apenas admins podem fazer upload de produtos
 - Validação de tipo e tamanho de arquivo
 - CORS configurado para origens específicas
-- Limite de 5MB para upload de imagens
+- Limite de 15MB para upload de imagens
 
 ## 🌐 CORS
 
