@@ -11,6 +11,7 @@ const User = require('./models/User');
 const Product = require('./models/Product');
 const CustomList = require('./models/CustomList');
 const Sale = require('./models/Sale');
+const Condicional = require('./models/Condicional');
 const { uploadToS3, deleteFromS3 } = require('./services/s3Service');
 const bcrypt = require('bcryptjs');
 const DraftSale = require('./models/DraftSale');
@@ -364,9 +365,43 @@ app.get('/api/products', authenticate, async (req, res) => {
   try {
     
     if (req.user.isAdmin) {
-      // Admins can see all products
-    const products = await Product.find();
-      return res.json(products);
+      // Admins can see all products with reserved stock information
+      const products = await Product.find();
+      
+      // Calcular estoque reservado em listas customizadas
+      const customLists = await CustomList.find();
+      
+      // Calcular estoque reservado por produto
+      const reservedStockByProduct = new Map();
+      for (const list of customLists) {
+        for (const item of list.products) {
+          const productId = item.productId.toString();
+          const reservedQty = item.quantity || 0;
+          
+          if (reservedStockByProduct.has(productId)) {
+            reservedStockByProduct.set(productId, reservedStockByProduct.get(productId) + reservedQty);
+          } else {
+            reservedStockByProduct.set(productId, reservedQty);
+          }
+        }
+      }
+      
+      // Adicionar informações de estoque reservado aos produtos
+      const productsWithReservedStock = products.map(product => {
+        const productId = product._id.toString();
+        const reservedStock = reservedStockByProduct.get(productId) || 0;
+        const availableStock = Math.max(0, (product.quantity || 0) - reservedStock);
+        const isFullyReserved = reservedStock >= (product.quantity || 0);
+        
+        return {
+          ...product.toObject(),
+          reservedStock,
+          availableStock,
+          isFullyReserved
+        };
+      });
+      
+      return res.json(productsWithReservedStock);
     }
 
     // For regular users, only show products in their lists
@@ -546,9 +581,11 @@ app.get('/api/custom-lists', authenticate, async (req, res) => {
         ]
       });
     }
+    
     // Para cada lista, filtrar produtos que existem
     const allProducts = await Product.find({}, '_id');
     const validProductIds = new Set(allProducts.map(p => p._id.toString()));
+    
     // Guardar ids de listas a serem removidas
     const listsToRemove = [];
     for (const list of lists) {
@@ -576,33 +613,63 @@ app.get('/api/custom-lists', authenticate, async (req, res) => {
         listsToRemove.push(list._id);
       }
     }
+    
     // Remover listas vazias
     if (listsToRemove.length > 0) {
       await CustomList.deleteMany({ _id: { $in: listsToRemove } });
       // Remover as listas do array local
       lists = lists.filter(list => !listsToRemove.includes(list._id.toString()));
     }
+    
+    // Calcular estoque total disponível por produto para admin
+    let productStockMap = new Map();
+    if (req.user.isAdmin) {
+      for (const list of lists) {
+        for (const item of list.products) {
+          const productId = item.productId.toString();
+          const availableQty = item.availableQuantity || item.quantity || 0;
+          
+          if (productStockMap.has(productId)) {
+            productStockMap.set(productId, productStockMap.get(productId) + availableQty);
+          } else {
+            productStockMap.set(productId, availableQty);
+          }
+        }
+      }
+    }
+    
     // Popular e formatar para o frontend
     const populatedLists = await Promise.all(lists.map(async (list) => {
       const populatedProducts = await Promise.all(
         list.products.map(async (item) => {
           // Handle both old format (string) and new format (object with productId)
-          let productId, quantity;
+          let productId, quantity, availableQuantity;
           if (typeof item === 'string') {
             productId = item;
             quantity = 1; // Default quantity for old format
+            availableQuantity = 1; // Default available quantity
           } else if (item && item.productId) {
             productId = item.productId;
             quantity = item.quantity || 1;
+            availableQuantity = item.availableQuantity || item.quantity || 1;
           } else {
             // Skip invalid items
             return null;
           }
           
           const product = await Product.findById(productId);
+          
+          // Para admin, mostrar estoque total disponível
+          let displayAvailableQuantity = availableQuantity;
+          if (req.user.isAdmin) {
+            displayAvailableQuantity = productStockMap.get(productId.toString()) || 0;
+          }
+          
           return {
             productId: productId,
             quantity: quantity,
+            availableQuantity: availableQuantity,
+            displayAvailableQuantity: displayAvailableQuantity,
             product: product
           };
         })
@@ -611,12 +678,32 @@ app.get('/api/custom-lists', authenticate, async (req, res) => {
       // Filter out null items (invalid products)
       const validProducts = populatedProducts.filter(item => item !== null);
       
+      // Para admin, calcular se a lista está esgotada baseado no estoque total
+      let isOutOfStockForAdmin = false;
+      if (req.user.isAdmin) {
+        isOutOfStockForAdmin = validProducts.every(product => product.displayAvailableQuantity === 0);
+      }
+      
+      // Filtrar listas esgotadas para usuários não-admin
+      if (!req.user.isAdmin && list.isOutOfStock) {
+        // Verificar se o usuário tem unidades cadastradas na lista
+        const hasUserUnits = validProducts.some(product => product.availableQuantity > 0);
+        if (!hasUserUnits) {
+          return null; // Não mostrar lista esgotada para usuários sem unidades
+        }
+      }
+      
       return {
         ...list.toObject(),
-        products: validProducts
+        products: validProducts,
+        isOutOfStockForAdmin: isOutOfStockForAdmin
       };
     }));
-    res.json(populatedLists);
+    
+    // Filtrar listas nulas (esgotadas para usuários sem unidades)
+    const filteredLists = populatedLists.filter(list => list !== null);
+    
+    res.json(filteredLists);
   } catch (error) {
     console.error('Error fetching custom lists:', error);
     res.status(500).json({ error: error.message });
@@ -1146,6 +1233,22 @@ app.post('/api/sales', authenticate, async (req, res) => {
       return res.status(400).json({ message: 'Valor total inválido' });
     }
 
+    // Verificar e atualizar estoque das listas customizadas
+    for (const saleProduct of products) {
+      const { productId, quantity } = saleProduct;
+      
+      // Buscar todas as listas customizadas que contêm este produto
+      const customLists = await CustomList.find({
+        'products.productId': productId,
+        isOutOfStock: false // Apenas listas com estoque
+      });
+
+      // Atualizar estoque em cada lista
+      for (const list of customLists) {
+        await list.updateStock(productId, quantity);
+      }
+    }
+
     // Calcular comissão (30% do total)
     const commission = Number((total * 0.3).toFixed(2));
 
@@ -1233,9 +1336,9 @@ app.get('/api/sales/summary', authenticate, async (req, res) => {
               as: 'product',
               in: {
                 productId: '$$product.productId',
-                name: '$$product.productDetails.name',
-                quantity: '$$product.quantity',
-                price: { $toDouble: '$$product.productDetails.price' }
+                name: { $ifNull: ['$$product.productDetails.name', 'Produto não encontrado'] },
+                quantity: { $toInt: '$$product.quantity' },
+                price: { $toDouble: { $ifNull: ['$$product.productDetails.finalPrice', 0] } }
               }
             }
           },
@@ -1340,6 +1443,231 @@ app.delete('/api/draft-sales', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Erro ao limpar venda em progresso:', error);
     res.status(500).json({ message: 'Erro ao limpar venda em progresso' });
+  }
+});
+
+// ===== ROTAS DE CONDICIONAIS =====
+
+// Rota para criar um novo condicional
+app.post('/api/condicionais', authenticate, async (req, res) => {
+  try {
+    const { clientName, products, discount = 0, notes = '' } = req.body;
+    
+    if (!clientName || !products || !Array.isArray(products) || products.length === 0) {
+      return res.status(400).json({ message: 'Dados inválidos para criar condicional' });
+    }
+
+    // Calcular totais
+    const totalOriginal = products.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalWithDiscount = totalOriginal - discount;
+
+    const condicional = new Condicional({
+      sellerId: req.user._id,
+      clientName,
+      products,
+      totalOriginal,
+      discount,
+      totalWithDiscount,
+      notes
+    });
+
+    await condicional.save();
+
+    // Popular os produtos para retornar
+    await condicional.populate('products.productId');
+
+    res.status(201).json(condicional);
+  } catch (error) {
+    console.error('Erro ao criar condicional:', error);
+    res.status(500).json({ message: 'Erro ao criar condicional' });
+  }
+});
+
+// Rota para listar condicionais do vendedor
+app.get('/api/condicionais', authenticate, async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = { sellerId: req.user._id };
+    
+    if (status && ['aberto', 'fechado', 'excluido'].includes(status)) {
+      query.status = status;
+    }
+
+    const condicionais = await Condicional.find(query)
+      .populate('products.productId')
+      .populate('saleId')
+      .sort({ createdAt: -1 });
+
+    res.json(condicionais);
+  } catch (error) {
+    console.error('Erro ao buscar condicionais:', error);
+    res.status(500).json({ message: 'Erro ao buscar condicionais' });
+  }
+});
+
+// Rota para obter um condicional específico
+app.get('/api/condicionais/:id', authenticate, async (req, res) => {
+  try {
+    const condicional = await Condicional.findOne({
+      _id: req.params.id,
+      sellerId: req.user._id
+    })
+    .populate('products.productId')
+    .populate('saleId');
+
+    if (!condicional) {
+      return res.status(404).json({ message: 'Condicional não encontrado' });
+    }
+
+    res.json(condicional);
+  } catch (error) {
+    console.error('Erro ao buscar condicional:', error);
+    res.status(500).json({ message: 'Erro ao buscar condicional' });
+  }
+});
+
+// Rota para atualizar um condicional
+app.put('/api/condicionais/:id', authenticate, async (req, res) => {
+  try {
+    const { clientName, products, discount, notes } = req.body;
+    
+    const condicional = await Condicional.findOne({
+      _id: req.params.id,
+      sellerId: req.user._id,
+      status: 'aberto' // Só permite editar condicionais abertos
+    });
+
+    if (!condicional) {
+      return res.status(404).json({ message: 'Condicional não encontrado ou não pode ser editado' });
+    }
+
+    // Atualizar campos
+    if (clientName) condicional.clientName = clientName;
+    if (products) condicional.products = products;
+    if (discount !== undefined) condicional.discount = discount;
+    if (notes !== undefined) condicional.notes = notes;
+
+    await condicional.save();
+    await condicional.populate('products.productId');
+
+    res.json(condicional);
+  } catch (error) {
+    console.error('Erro ao atualizar condicional:', error);
+    res.status(500).json({ message: 'Erro ao atualizar condicional' });
+  }
+});
+
+// Rota para fechar um condicional (converter em venda)
+app.post('/api/condicionais/:id/close', authenticate, async (req, res) => {
+  try {
+    const condicional = await Condicional.findOne({
+      _id: req.params.id,
+      sellerId: req.user._id,
+      status: 'aberto'
+    }).populate('products.productId');
+
+    if (!condicional) {
+      return res.status(404).json({ message: 'Condicional não encontrado ou já fechado' });
+    }
+
+    // Verificar e atualizar estoque das listas customizadas
+    for (const condicionalProduct of condicional.products) {
+      const { productId, quantity } = condicionalProduct;
+      
+      // Buscar todas as listas customizadas que contêm este produto
+      const customLists = await CustomList.find({
+        'products.productId': productId._id,
+        isOutOfStock: false // Apenas listas com estoque
+      });
+
+      // Atualizar estoque em cada lista
+      for (const list of customLists) {
+        await list.updateStock(productId._id, quantity);
+      }
+    }
+
+    // Criar uma nova venda com os produtos do condicional
+    const sale = new Sale({
+      userId: req.user._id,
+      products: condicional.products.map(item => ({
+        productId: item.productId._id,
+        quantity: item.quantity
+      })),
+      total: condicional.totalWithDiscount,
+      commission: condicional.totalWithDiscount * 0.3 // 30% de comissão
+    });
+
+    await sale.save();
+
+    // Fechar o condicional
+    await condicional.close(sale._id);
+
+    res.json({ 
+      message: 'Condicional fechado com sucesso',
+      condicional,
+      sale
+    });
+  } catch (error) {
+    console.error('Erro ao fechar condicional:', error);
+    res.status(500).json({ message: 'Erro ao fechar condicional' });
+  }
+});
+
+// Rota para excluir um condicional (marcar como excluído)
+app.delete('/api/condicionais/:id', authenticate, async (req, res) => {
+  try {
+    const condicional = await Condicional.findOne({
+      _id: req.params.id,
+      sellerId: req.user._id,
+      status: 'aberto'
+    });
+
+    if (!condicional) {
+      return res.status(404).json({ message: 'Condicional não encontrado ou já não está aberto' });
+    }
+
+    await condicional.delete();
+
+    res.json({ message: 'Condicional excluído com sucesso' });
+  } catch (error) {
+    console.error('Erro ao excluir condicional:', error);
+    res.status(500).json({ message: 'Erro ao excluir condicional' });
+  }
+});
+
+// Rota para inicializar estoque das listas customizadas (apenas admin)
+app.post('/api/custom-lists/initialize-stock', authenticate, async (req, res) => {
+  try {
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ message: 'Acesso negado. Apenas administradores podem inicializar estoque.' });
+    }
+
+    const lists = await CustomList.find();
+    let updatedCount = 0;
+
+    for (const list of lists) {
+      let needsUpdate = false;
+      
+      for (const product of list.products) {
+        if (product.availableQuantity === undefined) {
+          product.availableQuantity = product.quantity;
+          needsUpdate = true;
+        }
+      }
+      
+      if (needsUpdate) {
+        await list.save();
+        updatedCount++;
+      }
+    }
+
+    res.json({ 
+      message: `Estoque inicializado com sucesso. ${updatedCount} listas foram atualizadas.`,
+      updatedCount 
+    });
+  } catch (error) {
+    console.error('Erro ao inicializar estoque:', error);
+    res.status(500).json({ message: 'Erro ao inicializar estoque' });
   }
 });
 
