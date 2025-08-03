@@ -73,6 +73,18 @@ app.options('*', cors({
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
+// Middleware para redirecionar rotas sem /api para rotas com /api
+app.use((req, res, next) => {
+  // Se a rota não começa com /api e não é /uploads ou /, redirecionar
+  if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads') && req.path !== '/' && req.path !== '/health' && req.path !== '/version') {
+    // Criar nova URL com /api prefix
+    const newPath = `/api${req.path}`;
+    console.log(`🔄 Redirecting ${req.method} ${req.path} to ${newPath}`);
+    req.url = newPath;
+  }
+  next();
+});
+
 // Multer configuration for file uploads
 const storage = multer.memoryStorage();
 const upload = multer({ 
@@ -2089,10 +2101,32 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Version endpoint
+app.get('/version', (req, res) => {
+  res.json({ 
+    version: '1.0.0',
+    name: 'LIS MODAS Backend API',
+    description: 'Sistema de Gerenciamento de Produtos e Vendas'
+  });
+});
+
 // Start server
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 API available at http://localhost:${PORT}/api`);
+  console.log(`🌐 Direct API available at http://localhost:${PORT}`);
+  console.log(`🏥 Health check at http://localhost:${PORT}/health`);
+  console.log(`📋 Version info at http://localhost:${PORT}/version`);
   console.log(`🌐 CORS enabled for development`);
 });

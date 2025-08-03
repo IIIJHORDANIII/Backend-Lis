@@ -91,6 +91,14 @@ AWS_S3_BUCKET=your_s3_bucket_name
 - **Backend**: 3001
 - **MongoDB** (opcional): 27017
 
+### Endpoints Disponíveis
+
+- **API com prefixo**: `http://localhost:3001/api/*`
+- **API sem prefixo**: `http://localhost:3001/*` (redireciona automaticamente)
+- **Health check**: `http://localhost:3001/health`
+- **Version info**: `http://localhost:3001/version`
+- **Documentação**: `http://localhost:3001/`
+
 ## 🐳 Comandos Docker Úteis
 
 ```bash
@@ -174,6 +182,12 @@ curl http://localhost:3001/health
 
 # Verificar versão
 curl http://localhost:3001/version
+
+# Testar API (com prefixo)
+curl http://localhost:3001/api/test
+
+# Testar API (sem prefixo - redireciona automaticamente)
+curl http://localhost:3001/test
 ```
 
 ### Logs
