@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: lismodas-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # As seguintes variáveis devem ser definidas no arquivo .env ou passadas via docker-compose
+      # - MONGODB_URI=mongodb://localhost:27017/lismodas
+      # - JWT_SECRET=your_jwt_secret
+      # - AWS_ACCESS_KEY_ID=your_aws_access_key
+      # - AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+      # - AWS_REGION=us-east-1
+      # - AWS_S3_BUCKET=your_s3_bucket
+    volumes:
+      - ./uploads:/app/uploads
+      - ./.env:/app/.env:ro
+    restart: unless-stopped
+    networks:
+      - lismodas-network
+
+  # MongoDB (opcional - se quiser rodar localmente)
+  # mongodb:
+  #   image: mongo:6.0
+  #   container_name: lismodas-mongodb
+  #   ports:
+  #     - "27017:27017"
+  #   environment:
+  #     - MONGO_INITDB_ROOT_USERNAME=admin
+  #     - MONGO_INITDB_ROOT_PASSWORD=password
+  #     - MONGO_INITDB_DATABASE=lismodas
+  #   volumes:
+  #     - mongodb_data:/data/db
+  #   restart: unless-stopped
+  #   networks:
+  #     - lismodas-network
+
+networks:
+  lismodas-network:
+    driver: bridge
+
+# volumes:
+#   mongodb_data: 
