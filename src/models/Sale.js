@@ -27,7 +27,18 @@ const saleSchema = new mongoose.Schema({
     type: Number,
     required: true
     // Removido min: 0 para permitir comissão negativa em devoluções
-  }
+  },
+  listId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CustomList'
+  },
+  listName: String,
+  status: {
+    type: String,
+    enum: ['active', 'closed'],
+    default: 'active'
+  },
+  closedAt: Date
 }, {
   timestamps: true
 });

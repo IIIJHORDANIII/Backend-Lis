@@ -42,7 +42,26 @@ const customListSchema = new mongoose.Schema({
   isOutOfStock: {
     type: Boolean,
     default: false
-  }
+  },
+  status: {
+    type: String,
+    enum: ['active', 'closed'],
+    default: 'active'
+  },
+  closedAt: {
+    type: Date
+  },
+  returnedProducts: [{
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product'
+    },
+    quantity: Number,
+    returnedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, { timestamps: true });
 
 // Middleware para calcular se a lista está esgotada

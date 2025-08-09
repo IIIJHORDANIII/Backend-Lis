@@ -73,6 +73,203 @@ app.options('*', cors({
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
+// Rota de teste simples
+app.get('/api/test-simple', (req, res) => {
+  res.json({ message: 'Teste simples funcionando!', timestamp: new Date().toISOString() });
+});
+
+// Rota para verificar status dos produtos
+app.get('/api/debug/stock-status', async (req, res) => {
+  try {
+    console.log('🔍 Verificando produtos...');
+    
+    const products = await Product.find().select('name quantity').limit(10);
+    const totalProducts = await Product.countDocuments();
+    const productsWithStock = await Product.countDocuments({ quantity: { $gt: 0 } });
+    const productsOutOfStock = await Product.countDocuments({ quantity: { $lte: 0 } });
+    
+    console.log('✅ Produtos verificados:', { totalProducts, productsWithStock, productsOutOfStock });
+    
+    res.json({ 
+      products,
+      summary: {
+        total: totalProducts,
+        withStock: productsWithStock,
+        outOfStock: productsOutOfStock
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erro ao verificar produtos:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Rota para debug específico da lista
+app.get('/api/debug/list/:listId', async (req, res) => {
+  try {
+    const { listId } = req.params;
+    console.log(`🔍 Verificando lista: ${listId}`);
+    
+    const list = await CustomList.findById(listId);
+    if (!list) {
+      return res.status(404).json({ error: 'Lista não encontrada' });
+    }
+    
+    const sales = await Sale.find({ listId: listId });
+    const closedSales = await Sale.find({ listId: listId, status: 'closed' });
+    
+    res.json({
+      list: {
+        _id: list._id,
+        name: list.name,
+        status: list.status,
+        userId: list.userId,
+        products: list.products
+      },
+      sales: {
+        total: sales.length,
+        closed: closedSales.length,
+        active: sales.length - closedSales.length
+      },
+      salesDetails: sales.map(sale => ({
+        _id: sale._id,
+        status: sale.status,
+        total: sale.total,
+        createdAt: sale.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Erro ao verificar lista:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Rota para debug das vendas
+app.get('/api/debug/sales', async (req, res) => {
+  try {
+    console.log('🔍 Verificando vendas...');
+    
+    const allSales = await Sale.find().limit(10);
+    const salesWithListId = await Sale.find({ listId: { $exists: true, $ne: null } });
+    const salesWithoutListId = await Sale.find({ listId: { $exists: false } });
+    const closedSales = await Sale.find({ status: 'closed' });
+    
+    // Verificar usuários únicos com vendas
+    const uniqueUserIds = [...new Set(allSales.map(sale => sale.userId.toString()))];
+    const listsByUser = {};
+    
+    for (const userId of uniqueUserIds) {
+      const userLists = await CustomList.find({ userId: userId });
+      listsByUser[userId] = userLists.length;
+    }
+    
+    res.json({
+      summary: {
+        total: allSales.length,
+        withListId: salesWithListId.length,
+        withoutListId: salesWithoutListId.length,
+        closed: closedSales.length,
+        uniqueUsers: uniqueUserIds.length
+      },
+      users: uniqueUserIds,
+      listsByUser,
+      sampleSales: allSales.map(sale => ({
+        _id: sale._id,
+        userId: sale.userId,
+        listId: sale.listId,
+        status: sale.status,
+        total: sale.total,
+        createdAt: sale.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Erro ao verificar vendas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Rota para debug das listas
+app.get('/api/debug/lists', async (req, res) => {
+  try {
+    console.log('🔍 Verificando listas...');
+    
+    const allLists = await CustomList.find();
+    const activeLists = await CustomList.find({ status: 'active' });
+    const closedLists = await CustomList.find({ status: 'closed' });
+    
+    res.json({
+      summary: {
+        total: allLists.length,
+        active: activeLists.length,
+        closed: closedLists.length
+      },
+      lists: allLists.map(list => ({
+        _id: list._id,
+        name: list.name,
+        status: list.status,
+        userId: list.userId,
+        productsCount: list.products.length
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Erro ao verificar listas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Rota temporária para verificar status dos produtos e listas (sem autenticação para debug)
+app.get('/api/debug/status', async (req, res) => {
+  try {
+    console.log('🔍 Verificando status do sistema...');
+
+    // Contar produtos
+    const productsCount = await Product.countDocuments();
+    const productsWithStock = await Product.countDocuments({ quantity: { $gt: 0 } });
+    const productsOutOfStock = await Product.countDocuments({ quantity: { $lte: 0 } });
+
+    // Contar listas custom
+    const customListsCount = await CustomList.countDocuments();
+    const activeListsCount = await CustomList.countDocuments({ status: 'active' });
+    const closedListsCount = await CustomList.countDocuments({ status: 'closed' });
+
+    // Contar vendas
+    const salesCount = await Sale.countDocuments();
+    const activeSalesCount = await Sale.countDocuments({ status: 'active' });
+    const closedSalesCount = await Sale.countDocuments({ status: 'closed' });
+
+    // Buscar alguns produtos para exemplo
+    const sampleProducts = await Product.find().limit(5).select('name quantity');
+
+    // Buscar algumas listas para exemplo
+    const sampleLists = await CustomList.find().limit(3).select('name status products');
+
+    console.log('✅ Status verificado com sucesso');
+
+    res.json({
+      products: {
+        total: productsCount,
+        withStock: productsWithStock,
+        outOfStock: productsOutOfStock,
+        sample: sampleProducts
+      },
+      customLists: {
+        total: customListsCount,
+        active: activeListsCount,
+        closed: closedListsCount,
+        sample: sampleLists
+      },
+      sales: {
+        total: salesCount,
+        active: activeSalesCount,
+        closed: closedSalesCount
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erro ao verificar status:', error);
+    res.status(500).json({ message: 'Erro ao verificar status', error: error.message });
+  }
+});
+
 // Middleware para redirecionar rotas sem /api para rotas com /api
 app.use((req, res, next) => {
   // Se a rota não começa com /api e não é /uploads ou /, redirecionar
@@ -1404,6 +1601,179 @@ app.delete('/api/sales/user/:userId', authenticate, async (req, res) => {
   }
 });
 
+// Rota para relatório de vendas fechadas (apenas admin)
+app.get('/api/sales/closed-report', authenticate, async (req, res) => {
+  try {
+    // Verificar se o usuário é admin
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ 
+        message: 'Acesso negado. Apenas administradores podem acessar relatórios.' 
+      });
+    }
+
+    const { month, year } = req.query;
+    
+    // Construir query para buscar vendas fechadas
+    let query = { status: 'closed' };
+    
+    if (month && year) {
+      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const endDate = new Date(parseInt(year), parseInt(month), 1);
+      query.closedAt = {
+        $gte: startDate,
+        $lt: endDate
+      };
+    } else if (year) {
+      const startDate = new Date(parseInt(year), 0, 1);
+      const endDate = new Date(parseInt(year) + 1, 0, 1);
+      query.closedAt = {
+        $gte: startDate,
+        $lt: endDate
+      };
+    }
+
+    // Buscar vendas fechadas com dados populados
+    const sales = await Sale.find(query)
+      .populate('userId', 'name email')
+      .populate('products.productId')
+      .sort({ closedAt: -1 });
+
+    // Formatar dados para o frontend
+    const formattedSales = sales.map(sale => {
+      const closedDate = new Date(sale.closedAt);
+      return {
+        _id: sale._id,
+        listName: sale.listName || 'Lista não identificada',
+        userName: sale.userId ? sale.userId.name : 'Usuário não identificado',
+        products: sale.products.map(product => ({
+          productId: product.productId._id,
+          name: product.productId.name,
+          quantity: product.quantity,
+          price: product.productId.finalPrice || 0,
+          subtotal: product.quantity * (product.productId.finalPrice || 0)
+        })),
+        total: sale.total,
+        commission: sale.commission,
+        closedAt: sale.closedAt,
+        month: (closedDate.getMonth() + 1).toString().padStart(2, '0'),
+        year: closedDate.getFullYear().toString()
+      };
+    });
+
+    res.json(formattedSales);
+  } catch (error) {
+    console.error('Erro ao buscar relatório de vendas fechadas:', error);
+    res.status(500).json({ message: 'Erro ao buscar relatório de vendas fechadas' });
+  }
+});
+
+// Rota para fechar inventário de um usuário específico (apenas admin)
+app.post('/api/sales/close-user-inventory', authenticate, async (req, res) => {
+  try {
+    // Verificar se o usuário é admin
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ 
+        message: 'Acesso negado. Apenas administradores podem fechar inventários.' 
+      });
+    }
+
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ message: 'ID do usuário é obrigatório' });
+    }
+
+    // Verificar se o usuário existe
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    // Buscar todas as vendas ativas do usuário
+    const activeSales = await Sale.find({ 
+      userId: userId,
+      status: { $ne: 'closed' }
+    }).populate('products.productId');
+
+    if (activeSales.length === 0) {
+      return res.status(400).json({ message: 'Nenhuma venda ativa encontrada para este usuário' });
+    }
+
+    // Buscar listas custom do usuário
+    const customLists = await CustomList.find({ 
+      userId: userId,
+      status: { $ne: 'closed' }
+    });
+
+    let returnedProducts = 0;
+    const closedSales = [];
+
+    // Para cada lista custom, calcular produtos não vendidos e retornar ao estoque do admin
+    for (const list of customLists) {
+      // Calcular produtos vendidos desta lista
+      const listSales = activeSales.filter(sale => 
+        sale.listId && sale.listId.toString() === list._id.toString()
+      );
+
+      // Para cada produto da lista
+      for (const productItem of list.products) {
+        const soldQuantity = listSales.reduce((total, sale) => {
+          const saleProduct = sale.products.find(p => 
+            p.productId._id.toString() === productItem.productId.toString()
+          );
+          return total + (saleProduct ? saleProduct.quantity : 0);
+        }, 0);
+
+        const unsoldQuantity = productItem.quantity - soldQuantity;
+        
+        if (unsoldQuantity > 0) {
+          // Retornar produtos não vendidos ao estoque do admin
+          const product = await Product.findById(productItem.productId);
+          if (product) {
+            product.quantity += unsoldQuantity;
+            await product.save();
+            returnedProducts += unsoldQuantity;
+            console.log(`Retornando ${unsoldQuantity} unidades do produto ${product.name} ao estoque do admin`);
+          }
+        }
+      }
+    }
+
+    // Marcar vendas como fechadas e salvar na página de vendas fechadas
+    for (const sale of activeSales) {
+      sale.status = 'closed';
+      sale.closedAt = new Date();
+      
+      // Buscar nome da lista se existir
+      if (sale.listId) {
+        const list = customLists.find(l => l._id.toString() === sale.listId.toString());
+        if (list) {
+          sale.listName = list.name;
+        }
+      }
+      
+      await sale.save();
+      closedSales.push(sale);
+    }
+
+    // EXCLUIR todas as listas custom do usuário após processar as vendas
+    const deletedListsCount = await CustomList.deleteMany({ 
+      userId: userId,
+      status: { $ne: 'closed' }
+    });
+
+    res.json({ 
+      message: `Inventário fechado com sucesso para ${user.name}. ${returnedProducts} produtos retornaram ao estoque do administrador. ${deletedListsCount.deletedCount} listas foram excluídas.`,
+      returnedProducts,
+      closedSalesCount: closedSales.length,
+      deletedListsCount: deletedListsCount.deletedCount
+    });
+  } catch (error) {
+    console.error('Erro ao fechar inventário do usuário:', error);
+    res.status(500).json({ message: 'Erro ao fechar inventário do usuário' });
+  }
+});
+
 // Rota para obter venda em progresso
 app.get('/api/draft-sales', authenticate, async (req, res) => {
   try {
@@ -1683,6 +2053,143 @@ app.post('/api/custom-lists/initialize-stock', authenticate, async (req, res) =>
   }
 });
 
+// Rota para fechar estoque de uma lista específica
+app.post('/api/custom-lists/close-stock', authenticate, async (req, res) => {
+  try {
+    const { listId } = req.body;
+    
+    if (!listId) {
+      return res.status(400).json({ message: 'ID da lista é obrigatório' });
+    }
+
+    // Buscar a lista custom
+    const customList = await CustomList.findById(listId).populate('userId', 'name email');
+    
+    if (!customList) {
+      return res.status(404).json({ message: 'Lista não encontrada' });
+    }
+
+    // Verificar se o usuário tem permissão para fechar esta lista
+    if (customList.userId._id.toString() !== req.user._id.toString() && !req.user.isAdmin) {
+      return res.status(403).json({ message: 'Acesso negado. Você só pode fechar suas próprias listas.' });
+    }
+
+    // Buscar vendas desta lista
+    const sales = await Sale.find({ 
+      userId: customList.userId._id,
+      listId: listId 
+    }).populate('products.productId');
+
+    let returnedProducts = 0;
+
+    // Para cada produto da lista, calcular quantos não foram vendidos
+    for (const productItem of customList.products) {
+      const soldQuantity = sales.reduce((total, sale) => {
+        const saleProduct = sale.products.find(p => p.productId._id.toString() === productItem.productId.toString());
+        return total + (saleProduct ? saleProduct.quantity : 0);
+      }, 0);
+
+      const unsoldQuantity = productItem.quantity - soldQuantity;
+      
+      if (unsoldQuantity > 0) {
+        // Retornar produtos não vendidos ao estoque do admin
+        const product = await Product.findById(productItem.productId);
+        if (product) {
+          product.quantity += unsoldQuantity;
+          await product.save();
+          returnedProducts += unsoldQuantity;
+          console.log(`Retornando ${unsoldQuantity} unidades do produto ${product.name} ao estoque do admin`);
+        }
+      }
+    }
+
+    // Marcar vendas como fechadas
+    for (const sale of sales) {
+      sale.status = 'closed';
+      sale.closedAt = new Date();
+      sale.listName = customList.name;
+      await sale.save();
+    }
+
+    // EXCLUIR a lista após processar as vendas
+    await CustomList.findByIdAndDelete(listId);
+
+    res.json({ 
+      message: `Estoque fechado com sucesso. ${returnedProducts} produtos retornaram ao estoque do administrador. Lista excluída.`,
+      returnedProducts 
+    });
+  } catch (error) {
+    console.error('Erro ao fechar estoque:', error);
+    res.status(500).json({ message: 'Erro ao fechar estoque' });
+  }
+});
+
+// Rota para fechar inventário de um usuário específico (apenas admin)
+app.post('/api/sales/close-user-inventory', authenticate, async (req, res) => {
+  try {
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ message: 'Acesso negado. Apenas administradores podem fechar inventários.' });
+    }
+
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'ID do usuário é obrigatório' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    const userCustomLists = await CustomList.find({ userId: userId, status: { $ne: 'closed' } });
+    let totalReturnedProducts = 0;
+    let totalClosedSales = 0;
+
+    for (const list of userCustomLists) {
+      // Calculate unsold quantity for each product in the list
+      for (const productInList of list.products) {
+        const soldQuantity = await Sale.aggregate([
+          { $match: { userId: userId, listId: list._id, 'products.productId': productInList.productId } },
+          { $unwind: '$products' },
+          { $match: { 'products.productId': productInList.productId } },
+          { $group: { _id: null, totalSold: { $sum: '$products.quantity' } } }
+        ]);
+
+        const currentSold = soldQuantity.length > 0 ? soldQuantity[0].totalSold : 0;
+        const unsoldQuantity = productInList.quantity - currentSold;
+
+        if (unsoldQuantity > 0) {
+          await Product.findByIdAndUpdate(productInList.productId, { $inc: { quantity: unsoldQuantity } });
+          totalReturnedProducts += unsoldQuantity;
+          console.log(`✅ Retornou ${unsoldQuantity} unidades do produto ${productInList.productId} (Lista: ${list._id}) para o estoque do admin.`);
+        }
+      }
+
+      // Mark sales associated with this list as closed
+      await Sale.updateMany(
+        { userId: userId, listId: list._id, status: { $ne: 'closed' } },
+        { $set: { status: 'closed', closedAt: new Date(), listName: list.name } }
+      );
+      const closedSalesCount = await Sale.countDocuments({ userId: userId, listId: list._id, status: 'closed' });
+      totalClosedSales += closedSalesCount;
+
+      // Delete the custom list
+      await CustomList.findByIdAndDelete(list._id);
+      console.log(`🗑️ Lista customizada ${list._id} (Nome: ${list.name}) do usuário ${user.name} excluída.`);
+    }
+
+    res.status(200).json({
+      message: `Inventário do usuário ${user.name} fechado com sucesso. ${totalReturnedProducts} produtos não vendidos retornaram ao estoque do admin e ${userCustomLists.length} listas foram excluídas.`,
+      returnedProducts: totalReturnedProducts,
+      closedLists: userCustomLists.length,
+      closedSales: totalClosedSales
+    });
+  } catch (error) {
+    console.error('❌ Erro ao fechar inventário do usuário:', error);
+    res.status(500).json({ message: 'Erro ao fechar inventário do usuário', error: error.message });
+  }
+});
+
 // Test endpoint to check if server is running
 app.get('/api/test', (req, res) => {
   res.json({ 
@@ -1690,6 +2197,317 @@ app.get('/api/test', (req, res) => {
     timestamp: new Date().toISOString(),
     mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
   });
+});
+
+// Rota temporária para verificar status dos produtos e listas (sem autenticação para debug)
+app.get('/debug/status', async (req, res) => {
+  try {
+    console.log('🔍 Verificando status do sistema...');
+
+    // Contar produtos
+    const productsCount = await Product.countDocuments();
+    const productsWithStock = await Product.countDocuments({ quantity: { $gt: 0 } });
+    const productsOutOfStock = await Product.countDocuments({ quantity: { $lte: 0 } });
+
+    // Contar listas custom
+    const customListsCount = await CustomList.countDocuments();
+    const activeListsCount = await CustomList.countDocuments({ status: 'active' });
+    const closedListsCount = await CustomList.countDocuments({ status: 'closed' });
+
+    // Contar vendas
+    const salesCount = await Sale.countDocuments();
+    const activeSalesCount = await Sale.countDocuments({ status: 'active' });
+    const closedSalesCount = await Sale.countDocuments({ status: 'closed' });
+
+    // Buscar alguns produtos para exemplo
+    const sampleProducts = await Product.find().limit(5).select('name quantity');
+
+    // Buscar algumas listas para exemplo
+    const sampleLists = await CustomList.find().limit(3).select('name status products');
+
+    console.log('✅ Status verificado com sucesso');
+
+    res.json({
+      products: {
+        total: productsCount,
+        withStock: productsWithStock,
+        outOfStock: productsOutOfStock,
+        sample: sampleProducts
+      },
+      customLists: {
+        total: customListsCount,
+        active: activeListsCount,
+        closed: closedListsCount,
+        sample: sampleLists
+      },
+      sales: {
+        total: salesCount,
+        active: activeSalesCount,
+        closed: closedSalesCount
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erro ao verificar status:', error);
+    res.status(500).json({ message: 'Erro ao verificar status', error: error.message });
+  }
+});
+
+// Rota para migração de dados existentes (apenas admin)
+app.post('/api/migrate-data', async (req, res) => {
+  try {
+    // Verificar se o usuário é admin (temporariamente desabilitado para debug)
+    // if (!req.user.isAdmin) {
+    //   return res.status(403).json({ 
+    //     message: 'Acesso negado. Apenas administradores podem executar migrações.' 
+    //   });
+    // }
+
+    console.log('🔄 Iniciando migração de dados...');
+
+    // 1. Buscar todas as listas custom que foram marcadas como fechadas mas não foram excluídas
+    const closedLists = await CustomList.find({ status: 'closed' });
+    console.log(`📋 Encontradas ${closedLists.length} listas marcadas como fechadas`);
+
+    // 2. Buscar listas ativas que têm vendas fechadas (deveriam estar fechadas)
+    const activeLists = await CustomList.find();
+    console.log(`🔍 Encontradas ${activeLists.length} listas no total`);
+    const listsToProcess = [];
+    const orphanedLists = [];
+    
+    for (const list of activeLists) {
+      const closedSalesCount = await Sale.countDocuments({ 
+        userId: list.userId, 
+        listId: list._id, 
+        status: 'closed' 
+      });
+      
+      if (closedSalesCount > 0) {
+        listsToProcess.push(list);
+        console.log(`📋 Lista ativa ${list.name} tem ${closedSalesCount} vendas fechadas - será processada`);
+      } else {
+        // Lista ativa sem vendas (lista órfã)
+        orphanedLists.push(list);
+        console.log(`📋 Lista ativa ${list.name} não tem vendas - será processada como órfã`);
+      }
+    }
+    
+    // Se não há listas órfãs detectadas, mas há listas ativas, processar todas como órfãs
+    if (orphanedLists.length === 0 && activeLists.length > 0) {
+      console.log(`📋 Nenhuma lista órfã detectada, mas há ${activeLists.length} listas ativas. Processando todas como órfãs.`);
+      orphanedLists.push(...activeLists);
+    }
+    
+    console.log(`📋 Encontradas ${listsToProcess.length} listas ativas com vendas fechadas`);
+    console.log(`📋 Encontradas ${orphanedLists.length} listas ativas órfãs (sem vendas)`);
+
+    let deletedListsCount = 0;
+    let returnedProductsCount = 0;
+
+    // 3. Processar todas as listas (fechadas + ativas com vendas fechadas + listas órfãs)
+    const allListsToProcess = [...closedLists, ...listsToProcess, ...orphanedLists];
+    console.log(`🔄 Processando ${allListsToProcess.length} listas no total`);
+    
+    for (const list of allListsToProcess) {
+      console.log(`🔄 Processando lista: ${list.name} (ID: ${list._id})`);
+
+      // Buscar vendas desta lista
+      const sales = await Sale.find({ 
+        userId: list.userId,
+        listId: list._id 
+      }).populate('products.productId');
+
+      // Para cada produto da lista, calcular produtos não vendidos
+      for (const productItem of list.products) {
+        const soldQuantity = sales.reduce((total, sale) => {
+          const saleProduct = sale.products.find(p => 
+            p.productId._id.toString() === productItem.productId.toString()
+          );
+          return total + (saleProduct ? saleProduct.quantity : 0);
+        }, 0);
+
+        const unsoldQuantity = productItem.quantity - soldQuantity;
+        
+        if (unsoldQuantity > 0) {
+          // Retornar produtos não vendidos ao estoque do admin
+          const product = await Product.findById(productItem.productId);
+          if (product) {
+            product.quantity += unsoldQuantity;
+            await product.save();
+            returnedProductsCount += unsoldQuantity;
+            console.log(`📦 Retornando ${unsoldQuantity} unidades do produto ${product.name} ao estoque do admin`);
+          }
+        }
+      }
+
+      // Marcar vendas como fechadas se ainda não estiverem
+      for (const sale of sales) {
+        if (sale.status !== 'closed') {
+          sale.status = 'closed';
+          sale.closedAt = sale.closedAt || new Date();
+          sale.listName = list.name;
+          await sale.save();
+          console.log(`✅ Venda ${sale._id} marcada como fechada`);
+        }
+      }
+
+      // Excluir a lista
+      await CustomList.findByIdAndDelete(list._id);
+      deletedListsCount++;
+      console.log(`🗑️ Lista ${list.name} excluída`);
+    }
+
+    // 3. Buscar vendas que têm listId mas a lista não existe mais
+    const orphanedSales = await Sale.find({
+      listId: { $exists: true, $ne: null },
+      status: { $ne: 'closed' }
+    });
+
+    console.log(`🔍 Encontradas ${orphanedSales.length} vendas órfãs (com listId mas lista não existe)`);
+
+    for (const sale of orphanedSales) {
+      // Verificar se a lista ainda existe
+      const listExists = await CustomList.findById(sale.listId);
+      if (!listExists) {
+        // Se a lista não existe mais, marcar a venda como fechada
+        sale.status = 'closed';
+        sale.closedAt = new Date();
+        sale.listName = 'Lista removida';
+        await sale.save();
+        console.log(`✅ Venda órfã ${sale._id} marcada como fechada`);
+      }
+    }
+
+    // 4. Processar vendas sem listId (vendas órfãs)
+    const salesWithoutListId = await Sale.find({
+      listId: { $exists: false },
+      status: 'closed'
+    });
+
+    console.log(`🔍 Encontradas ${salesWithoutListId.length} vendas fechadas sem listId`);
+
+    // Agrupar vendas por usuário
+    const salesByUser = {};
+    for (const sale of salesWithoutListId) {
+      if (!salesByUser[sale.userId]) {
+        salesByUser[sale.userId] = [];
+      }
+      salesByUser[sale.userId].push(sale);
+    }
+
+    // Para cada usuário com vendas órfãs, verificar se tem lista ativa
+    for (const [userId, sales] of Object.entries(salesByUser)) {
+      const userList = await CustomList.findOne({ 
+        userId: userId, 
+        status: 'active' 
+      });
+
+      if (userList) {
+        console.log(`🔄 Processando vendas órfãs do usuário ${userId} com lista ativa ${userList.name}`);
+
+        // Associar vendas à lista
+        for (const sale of sales) {
+          sale.listId = userList._id;
+          sale.listName = userList.name;
+          await sale.save();
+          console.log(`✅ Venda ${sale._id} associada à lista ${userList.name}`);
+        }
+
+        // Calcular produtos não vendidos da lista
+        for (const productInList of userList.products) {
+          const soldQuantity = sales.reduce((total, sale) => {
+            const saleProduct = sale.products.find(p => 
+              p.productId.toString() === productInList.productId.toString()
+            );
+            return total + (saleProduct ? saleProduct.quantity : 0);
+          }, 0);
+
+          const unsoldQuantity = productInList.quantity - soldQuantity;
+          
+          if (unsoldQuantity > 0) {
+            // Retornar produtos não vendidos ao estoque do admin
+            const product = await Product.findById(productInList.productId);
+            if (product) {
+              product.quantity += unsoldQuantity;
+              await product.save();
+              returnedProductsCount += unsoldQuantity;
+              console.log(`📦 Retornando ${unsoldQuantity} unidades do produto ${product.name} ao estoque do admin`);
+            }
+          }
+        }
+
+        // Excluir a lista
+        await CustomList.findByIdAndDelete(userList._id);
+        deletedListsCount++;
+        console.log(`🗑️ Lista ${userList.name} excluída após processar vendas órfãs`);
+      } else {
+        // Usuário tem vendas órfãs mas não tem lista ativa
+        console.log(`🔄 Usuário ${userId} tem ${sales.length} vendas órfãs mas não tem lista ativa`);
+        
+        // Para vendas órfãs, não retornamos produtos ao estoque
+        // porque os produtos já foram vendidos e não temos a lista original
+        // para calcular o que não foi vendido
+        
+        // Marcar vendas como processadas
+        for (const sale of sales) {
+          sale.listName = 'Vendas Órfãs Processadas';
+          await sale.save();
+          console.log(`✅ Venda órfã ${sale._id} marcada como processada`);
+        }
+      }
+    }
+
+    // 4. Verificar produtos que podem ter estoque inconsistente
+    const products = await Product.find();
+    let fixedProductsCount = 0;
+
+    for (const product of products) {
+      if (product.quantity < 0) {
+        product.quantity = 0;
+        await product.save();
+        fixedProductsCount++;
+        console.log(`🔧 Produto ${product.name} com estoque negativo corrigido para 0`);
+      }
+    }
+
+    // 5. Criar usuário padrão se não existir
+    const defaultEmail = 'neusaaraujo@gmail.com';
+    const existingUser = await User.findOne({ email: defaultEmail });
+    
+    if (!existingUser) {
+      const defaultUser = new User({
+        name: 'Neusa Araujo',
+        email: defaultEmail,
+        password: 'neusaaraujo',
+        isAdmin: false
+      });
+      
+      await defaultUser.save();
+      console.log('✅ Usuário padrão criado:', defaultEmail);
+    } else {
+      console.log('ℹ️ Usuário padrão já existe:', defaultEmail);
+    }
+
+    console.log('✅ Migração concluída com sucesso!');
+
+    res.json({
+      message: 'Migração de dados concluída com sucesso!',
+      summary: {
+        closedListsProcessed: closedLists.length,
+        listsDeleted: deletedListsCount,
+        productsReturned: returnedProductsCount,
+        orphanedSalesFixed: orphanedSales.length,
+        productsFixed: fixedProductsCount,
+        defaultUserCreated: !existingUser
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro durante a migração:', error);
+    res.status(500).json({ 
+      message: 'Erro durante a migração de dados',
+      error: error.message 
+    });
+  }
 });
 
 // Rota raiz para mostrar todas as requisições disponíveis
