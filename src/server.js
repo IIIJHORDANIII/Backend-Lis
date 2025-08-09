@@ -193,7 +193,7 @@ app.get('/api/debug/lists', async (req, res) => {
   try {
     console.log('🔍 Verificando listas...');
     
-    const allLists = await CustomList.find();
+    const allLists = await CustomList.find().populate('userId', 'name email');
     const activeLists = await CustomList.find({ status: 'active' });
     const closedLists = await CustomList.find({ status: 'closed' });
     
@@ -207,13 +207,113 @@ app.get('/api/debug/lists', async (req, res) => {
         _id: list._id,
         name: list.name,
         status: list.status,
-        userId: list.userId,
+        userId: list.userId._id,
+        userName: list.userId.name,
+        userEmail: list.userId.email,
         productsCount: list.products.length
       }))
     });
   } catch (error) {
     console.error('❌ Erro ao verificar listas:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Rota para deletar lista da Neusa e retornar produtos ao admin
+app.post('/api/delete-neusa-list', async (req, res) => {
+  try {
+    console.log('🔄 Procurando e deletando lista da Neusa...');
+    
+    // Buscar usuária Neusa
+    const neusaUser = await User.findOne({ email: 'neusaaraujo@gmail.com' });
+    if (!neusaUser) {
+      return res.status(404).json({ message: 'Usuária Neusa não encontrada' });
+    }
+    
+    // Buscar listas da Neusa (por userId ou por nome que contenha "neusa")
+    const neusaListsByUser = await CustomList.find({ userId: neusaUser._id });
+    const neusaListsByName = await CustomList.find({ 
+      name: { $regex: /neusa/i } 
+    });
+    
+    // Combinar as listas (removendo duplicatas)
+    const allNeusaLists = [...neusaListsByUser];
+    for (const list of neusaListsByName) {
+      if (!allNeusaLists.find(l => l._id.toString() === list._id.toString())) {
+        allNeusaLists.push(list);
+      }
+    }
+    
+    console.log(`📋 Encontradas ${neusaListsByUser.length} listas por usuário e ${neusaListsByName.length} listas por nome`);
+    console.log(`📋 Total de ${allNeusaLists.length} listas da Neusa para processar`);
+    
+    if (allNeusaLists.length === 0) {
+      return res.status(404).json({ message: 'Nenhuma lista encontrada para a usuária Neusa' });
+    }
+    
+    const neusaLists = allNeusaLists;
+    
+    let totalReturnedProducts = 0;
+    let totalDeletedLists = 0;
+    
+    for (const list of neusaLists) {
+      console.log(`🔄 Processando lista: ${list.name} (ID: ${list._id})`);
+      
+      // Buscar vendas desta lista
+      const sales = await Sale.find({ 
+        userId: neusaUser._id,
+        listId: list._id 
+      });
+      
+      // Para cada produto da lista, calcular produtos não vendidos
+      for (const productItem of list.products) {
+        const soldQuantity = sales.reduce((total, sale) => {
+          const saleProduct = sale.products.find(p => 
+            p.productId.toString() === productItem.productId.toString()
+          );
+          return total + (saleProduct ? saleProduct.quantity : 0);
+        }, 0);
+
+        const unsoldQuantity = productItem.quantity - soldQuantity;
+        
+        if (unsoldQuantity > 0) {
+          // Retornar produtos não vendidos ao estoque do admin
+          const product = await Product.findById(productItem.productId);
+          if (product) {
+            product.quantity += unsoldQuantity;
+            await product.save();
+            totalReturnedProducts += unsoldQuantity;
+            console.log(`📦 Retornando ${unsoldQuantity} unidades do produto ${product.name} ao estoque do admin`);
+          }
+        }
+      }
+      
+      // Marcar vendas como fechadas se ainda não estiverem
+      for (const sale of sales) {
+        if (sale.status !== 'closed') {
+          sale.status = 'closed';
+          sale.closedAt = new Date();
+          sale.listName = list.name;
+          await sale.save();
+          console.log(`✅ Venda ${sale._id} marcada como fechada`);
+        }
+      }
+      
+      // Excluir a lista
+      await CustomList.findByIdAndDelete(list._id);
+      totalDeletedLists++;
+      console.log(`🗑️ Lista ${list.name} excluída`);
+    }
+    
+    res.json({
+      message: `Listas da Neusa processadas com sucesso. ${totalReturnedProducts} produtos retornaram ao estoque do admin e ${totalDeletedLists} listas foram excluídas.`,
+      returnedProducts: totalReturnedProducts,
+      deletedLists: totalDeletedLists
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro ao processar listas da Neusa:', error);
+    res.status(500).json({ message: 'Erro ao processar listas da Neusa', error: error.message });
   }
 });
 
